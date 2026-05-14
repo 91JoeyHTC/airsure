@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/* ── AirSure Design Tokens ─────────────────────────────────── */
+:root {
+  /* A/B 雙核心 — green */
+  --as-primary:       #0E7A66;
+  --as-primary-hover: #0A5F4F;
+  --as-primary-tint:  #E8F5E9;
+  --as-ab:            #0E7A66;
+  --as-ab-tint:       #E8F5E9;
+  --as-ab-ink:        #085041;
+
+  /* C–G 營運 — indigo */
+  --as-cdefg:         #4F46E5;
+  --as-cdefg-tint:    #EEF2FF;
+  --as-cdefg-ink:     #3C3489;
+
+  /* H AI — orange */
+  --as-h:             #D97706;
+  --as-h-tint:        #FFF7ED;
+  --as-h-ink:         #633806;
+
+  /* Semantic */
+  --as-success:       #16A34A;
+  --as-success-tint:  #DCFCE7;
+  --as-warning:       #EAB308;
+  --as-warning-tint:  #FEF9C3;
+  --as-danger:        #DC2626;
+  --as-danger-tint:   #FEE2E2;
+  --as-info:          #2563EB;
+  --as-info-tint:     #DBEAFE;
+
+  /* Neutrals */
+  --as-bg:            #F9FAFB;
+  --as-surface:       #FFFFFF;
+  --as-line:          #E5E7EB;
+  --as-line-2:        #F3F4F6;
+  --as-ink:           #111827;
+  --as-ink-2:         #374151;
+  --as-mute:          #6B7280;
+  --as-mute-2:        #9CA3AF;
+
+  /* Sidebar */
+  --as-sidebar:       #1F2937;
+  --as-sidebar-text:  #E5E7EB;
+  --as-sidebar-mute:  #9CA3AF;
+  --as-sidebar-active:#374151;
+
+  /* Typography */
+  --f-sans: 'Inter', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --f-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  /* Spacing */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;
+  --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  --sp-7: 48px; --sp-8: 64px;
+
+  /* Radius */
+  --r-sm: 4px;  --r-md: 6px;  --r-lg: 10px;  --r-xl: 14px;
+
+  /* Shadows */
+  --sh-sm: 0 1px 2px rgba(17,24,39,0.04);
+  --sh-md: 0 4px 12px rgba(17,24,39,0.06);
+  --sh-lg: 0 12px 28px rgba(17,24,39,0.08);
+}
+
+/* ── Base reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--f-sans);
+  font-size: 15px;
+  color: var(--as-ink);
+  background: var(--as-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Chinese word-break globally */
+body { word-break: keep-all; overflow-wrap: break-word; }
+
+@theme inline {
+  --color-as-primary:      var(--as-primary);
+  --color-as-ab:           var(--as-ab);
+  --color-as-ab-tint:      var(--as-ab-tint);
+  --color-as-cdefg:        var(--as-cdefg);
+  --color-as-cdefg-tint:   var(--as-cdefg-tint);
+  --color-as-h:            var(--as-h);
+  --color-as-h-tint:       var(--as-h-tint);
+  --color-as-success:      var(--as-success);
+  --color-as-warning:      var(--as-warning);
+  --color-as-danger:       var(--as-danger);
+  --color-as-info:         var(--as-info);
+  --color-as-bg:           var(--as-bg);
+  --color-as-surface:      var(--as-surface);
+  --color-as-line:         var(--as-line);
+  --color-as-line-2:       var(--as-line-2);
+  --color-as-ink:          var(--as-ink);
+  --color-as-ink-2:        var(--as-ink-2);
+  --color-as-mute:         var(--as-mute);
+  --color-as-mute-2:       var(--as-mute-2);
+  --color-as-sidebar:      var(--as-sidebar);
+  --font-sans:             var(--f-sans);
+  --font-mono:             var(--f-mono);
+  --radius-sm:             var(--r-sm);
+  --radius-md:             var(--r-md);
+  --radius-lg:             var(--r-lg);
+  --radius-xl:             var(--r-xl);
+  --shadow-sm:             var(--sh-sm);
+  --shadow-md:             var(--sh-md);
+  --shadow-lg:             var(--sh-lg);
+}
