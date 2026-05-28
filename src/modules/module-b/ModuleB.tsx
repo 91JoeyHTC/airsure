@@ -47,6 +47,22 @@ const VALUE_MATRIX = [
   { id: 'vipDoze', lbl: '沉睡 VIP', desc: '高 LTV × 低活躍', n: 186,  arr: 14, ltv: 'NT$ 320K',  mom: '−8',  tone: 'r', action: '主管親自挽回 · 流失警報' },
 ]
 
+// 1b. 價值象限散點圖資料(deterministic pseudo-random,代表性 80 個客戶取樣)
+const SCATTER_POINTS: Array<{ x: number; y: number; q: 'rising' | 'champ' | 'long' | 'vipDoze' }> = (() => {
+  let s = 17
+  const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280 }
+  const out: Array<{ x: number; y: number; q: 'rising' | 'champ' | 'long' | 'vipDoze' }> = []
+  // 金主 (high LTV high activity): x 50-100, y 55-100, 12 點
+  for (let i = 0; i < 12; i++) out.push({ x: 55 + rnd() * 42, y: 58 + rnd() * 40, q: 'champ' })
+  // 潛力新星 (low LTV high activity): x 5-48, y 52-95, 22 點
+  for (let i = 0; i < 22; i++) out.push({ x: 5 + rnd() * 42, y: 52 + rnd() * 43, q: 'rising' })
+  // 沉睡 VIP (high LTV low activity): x 52-95, y 5-45, 8 點
+  for (let i = 0; i < 8; i++) out.push({ x: 52 + rnd() * 42, y: 5 + rnd() * 38, q: 'vipDoze' })
+  // 長尾 (low LTV low activity): x 2-48, y 2-48, 38 點
+  for (let i = 0; i < 38; i++) out.push({ x: 2 + rnd() * 45, y: 2 + rnd() * 45, q: 'long' })
+  return out
+})()
+
 // 2. 生命週期 6 階段
 const LIFECYCLE_STAGES = [
   { k: '新客',       range: '0–3 個月',     n: 482,  med: 38,  hp: 78, c: '#4F46E5',          next: '完成 App 配對 + 14 天教學' },
@@ -395,11 +411,107 @@ function SegmentView() {
         </div>
       </div>
 
-      {/* 1. 價值象限 */}
+      {/* 1a. 價值象限散點圖 */}
+      {mode === 'matrix' && (() => {
+        const W = 700, H = 380
+        const PAD_L = 56, PAD_R = 24, PAD_T = 24, PAD_B = 48
+        const iW = W - PAD_L - PAD_R
+        const iH = H - PAD_T - PAD_B
+        const xPx = (x: number) => PAD_L + (x / 100) * iW
+        const yPx = (y: number) => PAD_T + iH - (y / 100) * iH
+        const qColor = (q: string) =>
+          q === 'champ' ? 'var(--as-success)' :
+          q === 'vipDoze' ? 'var(--as-danger)' :
+          q === 'rising' ? 'var(--as-primary)' :
+          '#9CA3AF'
+        const LTV_MAX = 600 // 對應 x = 100 (NT$ K)
+        const xTicks = [0, 100, 200, 300, 400, 500, 600]
+        const yTicks = [0, 25, 50, 75, 100]
+        return (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="ch">
+              <div><h3>價值象限散點圖</h3><div className="csub">每點代表一位客戶 · X 軸 LTV(NT$ K) · Y 軸 90 天活躍度</div></div>
+              <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--as-mute)' }}>
+                {[
+                  { l: '金主', c: 'var(--as-success)' },
+                  { l: '潛力新星', c: 'var(--as-primary)' },
+                  { l: '沉睡 VIP', c: 'var(--as-danger)' },
+                  { l: '長尾', c: '#9CA3AF' },
+                ].map(lg => (
+                  <span key={lg.l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: lg.c }} />
+                    {lg.l}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+              <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: W, height: 'auto' }}>
+                {/* 象限分界線 (中線) */}
+                <line x1={xPx(50)} y1={PAD_T} x2={xPx(50)} y2={PAD_T + iH} stroke="var(--as-line)" strokeDasharray="4 4" />
+                <line x1={PAD_L} y1={yPx(50)} x2={PAD_L + iW} y2={yPx(50)} stroke="var(--as-line)" strokeDasharray="4 4" />
+
+                {/* 象限淡色背景(可選 — 提升可讀性) */}
+                <rect x={xPx(50)} y={PAD_T} width={iW / 2} height={iH / 2} fill="var(--as-success)" fillOpacity={0.04} />
+                <rect x={PAD_L} y={PAD_T} width={iW / 2} height={iH / 2} fill="var(--as-primary)" fillOpacity={0.04} />
+                <rect x={xPx(50)} y={yPx(50)} width={iW / 2} height={iH / 2} fill="var(--as-danger)" fillOpacity={0.04} />
+                <rect x={PAD_L} y={yPx(50)} width={iW / 2} height={iH / 2} fill="#9CA3AF" fillOpacity={0.04} />
+
+                {/* 軸線 */}
+                <line x1={PAD_L} y1={PAD_T + iH} x2={PAD_L + iW} y2={PAD_T + iH} stroke="var(--as-mute-2)" />
+                <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + iH} stroke="var(--as-mute-2)" />
+
+                {/* X 軸刻度 (LTV K) */}
+                {xTicks.map(v => {
+                  const xx = (v / LTV_MAX) * 100
+                  return (
+                    <g key={v}>
+                      <line x1={xPx(xx)} y1={PAD_T + iH} x2={xPx(xx)} y2={PAD_T + iH + 4} stroke="var(--as-mute-2)" />
+                      <text x={xPx(xx)} y={PAD_T + iH + 18} textAnchor="middle" fontSize="10" fill="var(--as-mute)" fontFamily="var(--f-mono)">
+                        {v === 0 ? '0' : `${v}K`}
+                      </text>
+                    </g>
+                  )
+                })}
+
+                {/* Y 軸刻度 (活躍度 0-100) */}
+                {yTicks.map(y => (
+                  <g key={y}>
+                    <line x1={PAD_L - 4} y1={yPx(y)} x2={PAD_L} y2={yPx(y)} stroke="var(--as-mute-2)" />
+                    <text x={PAD_L - 8} y={yPx(y) + 3} textAnchor="end" fontSize="10" fill="var(--as-mute)" fontFamily="var(--f-mono)">{y}</text>
+                  </g>
+                ))}
+
+                {/* 象限標籤(放在四個角落內側) */}
+                <text x={xPx(25)} y={yPx(92)} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--as-primary)" opacity={0.55}>潛力新星</text>
+                <text x={xPx(75)} y={yPx(92)} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--as-success)" opacity={0.65}>金主</text>
+                <text x={xPx(25)} y={yPx(8)} textAnchor="middle" fontSize="12" fontWeight="700" fill="#9CA3AF" opacity={0.85}>長尾</text>
+                <text x={xPx(75)} y={yPx(8)} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--as-danger)" opacity={0.6}>沉睡 VIP</text>
+
+                {/* 散點 */}
+                {SCATTER_POINTS.map((p, i) => (
+                  <circle key={i} cx={xPx(p.x)} cy={yPx(p.y)} r={4.5} fill={qColor(p.q)} fillOpacity={0.72} stroke="#fff" strokeWidth={0.8}>
+                    <title>{`${p.q === 'champ' ? '金主' : p.q === 'rising' ? '潛力新星' : p.q === 'vipDoze' ? '沉睡 VIP' : '長尾'} · LTV ${Math.round(p.x * LTV_MAX / 100)}K · 活躍度 ${Math.round(p.y)}`}</title>
+                  </circle>
+                ))}
+
+                {/* 軸標題 */}
+                <text x={PAD_L + iW / 2} y={H - 6} textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--as-ink-2)">LTV (NT$ K) →</text>
+                <text x={16} y={PAD_T + iH / 2} textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--as-ink-2)" transform={`rotate(-90, 16, ${PAD_T + iH / 2})`}>90 天活躍度 →</text>
+              </svg>
+            </div>
+            <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: '#F3F4F6', fontSize: 11, color: 'var(--as-mute)' }}>
+              此圖顯示 80 位代表性客戶取樣 · 將滑鼠移到點上可看 LTV 與活躍度數值 · 全量為 8,328 位
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* 1b. 價值象限 2x2 卡片明細 */}
       {mode === 'matrix' && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="ch">
-            <div><h3>價值象限</h3><div className="csub">主管視角 · 決定資源該放在哪一格</div></div>
+            <div><h3>各象限明細</h3><div className="csub">主管視角 · 決定資源該放在哪一格</div></div>
           </div>
           <div style={{
             display: 'grid',
