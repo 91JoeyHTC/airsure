@@ -85,6 +85,7 @@
   padding: 1px 6px; border-radius: 8px; font-weight: 600;
 }
 .b-subtab.active .n { background: var(--as-ab-tint); color: var(--as-ab-ink); }
+.b-subtabs.cdefg .b-subtab.active .n { background: var(--as-cdefg-tint); color: var(--as-cdefg-ink); }
 
 /* Filter bar */
 .fb {

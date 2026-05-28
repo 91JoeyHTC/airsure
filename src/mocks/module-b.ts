@@ -395,3 +395,135 @@ export const WANG_PROFILE = {
     { d: '2025-03-04', who: '客服 廖小姐', topic: '客訴處理', note: 'A81 噪音問題,改派顧問到府當場降價處理,客戶滿意' },
   ],
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WANG_MEMBER_EXT — 王敬梅 360° 的「會員經營面」擴充資料
+// 與 WANG_PROFILE 同一份底層客戶,Module B 個人 360° 視圖 + Module E 跨模組跳轉共用
+// 2026-05-28:從 Module E mock 搬到此處,讓 mock-b 成為王敬梅完整 mock 的單一資料源
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const WANG_MEMBER_EXT = {
+  memberId: 'M-201000272',
+  cid: WANG_PROFILE.identity.cid,
+
+  // 訂閱方案
+  subscription: {
+    plan: 'AirCare 訂閱 · 高級年方案',
+    status: 'active' as const,
+    startDate: '2024-04-15',
+    nextRenewal: '2026-09-15',
+    daysToRenewal: 110,
+    monthlyValue: 1280,
+    annualValue: 15360,
+    autoRenew: true,
+    paymentMethod: '信用卡 (****4421)',
+    renewedCount: 2,
+  },
+
+  // 流失預測(對齊 Module E EChurn tier 邏輯)
+  churnPrediction: {
+    probability: 38,
+    tier: 'mid' as 'high' | 'mid' | 'lo',
+    tierLabel: '中風險',
+    pctRange: '30–60%',
+    confidence: 82,
+    primaryReasons: [
+      { factor: '保養頻率偏低(實際 11 月/次 · 建議 6 月)', weight: 0.32 },
+      { factor: '長期殺價 / 毛利敏感',                       weight: 0.24 },
+      { factor: '單一聯絡管道(僅電話 · 無 Email/LINE)',     weight: 0.21 },
+      { factor: '濾網更換偏低(3 台殘量 < 35%)',             weight: 0.15 },
+      { factor: '本月活動回應下降',                           weight: 0.08 },
+    ],
+    estimatedRecoverValue: 68000,
+    suggestedAction: '主動致電 + 訂閱優惠 + 補建 LINE',
+    whatIf: [
+      { cls: 'win' as const, lbl: 'AI 推薦', nm: '主動致電 + 補建 LINE + 訂閱優惠', pred: 'NT$ 68K', delta: '−24%', conf: '82%', go: '立即執行 →' },
+      { cls: ''    as const, lbl: '保守方案', nm: '僅補建 LINE + EDM 教育',         pred: 'NT$ 24K', delta: '−9%',  conf: '74%', go: '考慮 →' },
+      { cls: 'warn' as const, lbl: '不介入', nm: '依現況推進,等續約再評估',         pred: 'NT$ 0',   delta: '+6%',  conf: '68%', go: '對照組 →' },
+    ],
+  },
+
+  // 積點
+  points: {
+    tier: 'Gold',
+    tierColor: '#D97706',
+    balance: 14000,
+    monthlyEarned: 1280,
+    monthlyRedeemed: 5200,
+    redemptionRate: 37.1,
+    nextTier: 'Platinum',
+    nextTierAt: 18000,
+    pointsToNextTier: 4000,
+    recentEarn: [
+      { d: '2026-04-22', src: 'A71 維修 +ECF 採購', pts: 824 },
+      { d: '2026-04-10', src: '春季健康月 EDM 點擊', pts: 50 },
+      { d: '2025-11-04', src: '雙11濾網組合下單',     pts: 720 },
+      { d: '2025-09-18', src: 'A81 ECF×2 採購',       pts: 640 },
+    ],
+    redeemableItems: [
+      { name: '濾網升級券 NT$500',     pts: 5000, fit: '配合下次定保' },
+      { name: 'AirCare 季度報告',      pts: 8000, fit: '高敏家庭 95% 適配' },
+      { name: '免費到府健康評估',      pts: 12000, fit: '可帶推薦人' },
+    ],
+  },
+
+  // 行銷面向
+  marketing: {
+    segments: [
+      { k: 'allergy',   l: '過敏季響應族',   cls: 'g' as const },
+      { k: 'recurring', l: '推薦回購主力',   cls: 'g' as const },
+      { k: 'edm',       l: 'EDM 開信族',     cls: 'b' as const },
+      { k: 'pot',       l: '潛力新星',       cls: 'b' as const },
+    ],
+    lifecycleStage: '活躍',
+    npsScore: 8,
+    npsCategory: '中立 7-8',
+    edmOpenRate: 52,
+    edmClickRate: 12,
+    lineConnected: false,
+    appMau: false,
+    appLastActive: '14 天前',
+    referralCount: 1,
+    referralValue: 18000,
+    // C2 #4:NPS 趨勢 + 最後填答時間
+    npsTrend: '+1 vs 上次',
+    npsLastAnswered: '2025-Q4',
+    referralPotential: '高' as '高' | '中' | '低',
+    referralPotentialReason: '滿意度高(4.8/5)但僅帶 1 位,擴散潛力未發揮',
+    // C2 #3:活動回應每筆補轉換金額(rev 為 NT$;非轉換則 0)
+    campaignResponse: [
+      { d: '2026-04-10', name: '春季健康月 EDM', action: '開信',                 status: 'ok'   as const, rev: 0 },
+      { d: '2026-02-14', name: '情人節限定優惠', action: '未開信',                status: 'miss' as const, rev: 0 },
+      { d: '2025-11-04', name: '雙11濾網組合',   action: '開信 + 點擊 + 下單',     status: 'win' as const, rev: 7200 },
+      { d: '2025-09-10', name: '中秋送禮專案',   action: '開信 + 點擊',           status: 'ok'   as const, rev: 0 },
+      { d: '2025-04-15', name: '春季健康月 EDM', action: '開信 + 點擊',           status: 'ok'   as const, rev: 0 },
+    ],
+    // C2 #5:AI 推薦活動補預估貢獻金額(與主管視圖成長機會對齊)
+    nextCampaignSuggestion: {
+      name: '高敏家庭 AirCare 升級包',
+      reason: '命中「過敏季響應族 + 推薦回購主力 + EDM 開信族」三群 · 適配度 95%',
+      expectedOpen: 68,
+      expectedConvert: 22,
+      expectedRevenue: 6800,           // 對齊主管視圖成長機會 AirCare +NT$6,800/季
+      expectedRevenueUnit: '/ 季' as const,
+    },
+  },
+
+  // 跨模組信號(對應王敬梅在各模組的足跡)
+  crossSignals: [
+    { mod: 'A', label: '空氣場域', signal: '臺北信義居家 SH-1001 · 健康度 78 · ② 穩定型',           cls: 'g' as const, link: '/module-a' },
+    { mod: 'C', label: '服務管理', signal: '1 張待結派工(A81 濾網更換 · 2026-04-22 後續)',          cls: 'y' as const, link: '/module-c' },
+    { mod: 'D', label: '產品管理', signal: '持有 4 機型 · ECF/HEPA 庫存正常',                       cls: 'g' as const, link: '/module-d' },
+    { mod: 'F', label: '營收分析', signal: '累計 NT$128.9K · P72 · 平均客單 8.6K',                   cls: 'g' as const, link: '/module-f' },
+    { mod: 'G', label: '健康證書', signal: '春季證書尚未發送 · 高敏家庭建議推送',                   cls: 'y' as const, link: '/module-g' },
+    { mod: 'H', label: '決策中心', signal: '推薦行動:訂閱升級 + 補 LINE,預估 ROI 4.8×',           cls: 'b' as const, link: '/module-h' },
+  ],
+
+  // 行動 / 待辦(會員經營角度 — 著重「行銷 + 客服」)
+  memberTodos: [
+    { pri: 'r' as const, label: '本月主動致電 · SLA 14 天內',           sub: '中風險 + 訂閱距續約 110 天 · 由顧問鄭偉仁負責' },
+    { pri: 'r' as const, label: '補建 LINE / Email · 影響觸及 -40%',    sub: '通知到達率僅 60% · 致電時順便邀請加 LINE' },
+    { pri: 'y' as const, label: '推送春季 AirCare 升級包',                sub: '命中 3 群 · 預估開信 68% · 轉換 22%' },
+    { pri: 'y' as const, label: '濾網更換主動推送',                       sub: '小孩房 A81 殘量 14% · 預估收益 NT$ 2,800' },
+  ],
+}

@@ -1,5 +1,93 @@
 /* AirSure — Module E (會員經營) mock data */
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 母體定義表 — 各 tab 的單一資料源 (single source of truth)
+// 參考:「module-e-mock會員主檔與母體定義.md」(2026/05/14)
+// 解 #2 #7:總會員數與各 tab 子集數字的包含關係
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const POPULATION = {
+  // 會員母體(可比較、可相加)
+  totalMembers: 8420,           // 天花板:所有註冊會員
+  paidSubscribers: 6420,        // 付費訂閱會員(子集)
+  pointsAccounts: 5882,         // 有積點帳戶(子集)
+
+  // 渠道受眾(非會員母體,不可與會員數混用)
+  edmSubscribers: 6842,
+  lineFriends: 7842,
+  appAccounts: 6420,
+
+  // 生命週期五階段(加總 = totalMembers 8,420)
+  lifecycle: {
+    new:    342,    // 新會員(本月新增)
+    active: 5760,   // 活躍
+    sleep:  1284,   // 沉睡
+    risk:   268,    // 流失預警
+    gone:   766,    // 流失/挽回
+  },
+
+  // 包含關係(解 #7)
+  outreachTotal: 37,
+  outreachBreakdown: { expire: 15, device: 10, dormant: 8, referral: 4 },
+  highRiskTotal: 23,            // 流失機率 >60% · 與主動聯繫名單部分重疊
+
+  // 挽回估值(解 #3):37 位待聯繫的預估可挽回總和
+  recoverValueTotal: 840000,    // NT$ 840K
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBER_MASTER — 20 筆共用會員主檔 · 各 tab 一律引用,不得自創
+// 解 #4:同一 M- 編號跨 tab 姓名/等級/狀態一致
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type LifeStage = 'new' | 'active' | 'sleep' | 'risk' | 'gone'
+export type RfmSeg = '冠軍會員' | '忠誠主力' | '潛力新星' | '一般活躍' | '需喚醒' | '即將流失' | '已流失' | '觀望新客'
+export type OutreachReason = 'expire' | 'device' | 'dormant' | 'referral'
+
+export interface MemberMaster {
+  id: string
+  name: string
+  level: string           // 高級 / 一般 / Diamond / Platinum / Gold / Silver / Bronze
+  city: string
+  site: string            // SH-XXXX 場域編號
+  stage: LifeStage
+  churn: number           // 流失機率 %
+  rfm: RfmSeg
+  recoverK: number | null // 挽回估值(K NT$);非待聯繫者為 null
+  outreach: false | OutreachReason
+  pointsUsed: number      // 本月使用
+  pointsTotal: number     // 累積
+  trigger: string         // 觸發訊號(若無則 '—')
+  owner: string           // 負責人(若無則 '—')
+}
+
+export const MEMBER_MASTER: MemberMaster[] = [
+  { id: 'M-008412', name: '陳俊宏', level: '高級',   city: '台北', site: 'SH-0021', stage: 'risk',   churn: 64, rfm: '即將流失', recoverK: 184,  outreach: 'expire',   pointsUsed: 200,    pointsTotal: 2400,  trigger: '設備離線 48h · 使用率 18%',     owner: '林佩蓉' },
+  { id: 'M-007738', name: '李文芳', level: '一般',   city: '台北', site: 'SH-0033', stage: 'risk',   churn: 51, rfm: '即將流失', recoverK: 88,   outreach: 'dormant',  pointsUsed: 0,      pointsTotal: 480,   trigger: '連續 28 天 0 開機',              owner: '林佩蓉' },
+  { id: 'M-009203', name: '王淑芬', level: '高級',   city: '台中', site: 'SH-2841', stage: 'sleep',  churn: 22, rfm: '需喚醒',   recoverK: 12,   outreach: 'device',   pointsUsed: 800,    pointsTotal: 3200,  trigger: '濾網逾期 18 天 · TVOC 警示',     owner: '張凱翔' },
+  { id: 'M-005611', name: '張志明', level: '一般',   city: '新北', site: 'SH-1147', stage: 'sleep',  churn: 28, rfm: '需喚醒',   recoverK: 24,   outreach: 'device',   pointsUsed: 120,    pointsTotal: 620,   trigger: '健康諮詢逾期 · 分數 78→66',      owner: '張凱翔' },
+  { id: 'M-010055', name: '林雅琪', level: '一般',   city: '桃園', site: 'SH-4119', stage: 'active', churn: 15, rfm: '潛力新星', recoverK: 38,   outreach: 'referral', pointsUsed: 4800,   pointsTotal: 16200, trigger: '推薦邀請 3 次未成功',             owner: '陳怡君' },
+  { id: 'M-006822', name: '黃建中', level: '高級',   city: '高雄', site: 'SH-3052', stage: 'risk',   churn: 38, rfm: '即將流失', recoverK: 92,   outreach: 'expire',   pointsUsed: 300,    pointsTotal: 1800,  trigger: 'TVOC 異常 · App 30 天未開',     owner: '林佩蓉' },
+  { id: 'M-011204', name: '黃健宇', level: '一般',   city: '台南', site: 'SH-5210', stage: 'risk',   churn: 72, rfm: '即將流失', recoverK: 78,   outreach: 'dormant',  pointsUsed: 0,      pointsTotal: 240,   trigger: '使用率驟降 · 未回應',             owner: '張凱翔' },
+  { id: 'M-005208', name: '吳承翰', level: '高級',   city: '台北', site: 'SH-0188', stage: 'active', churn: 8,  rfm: '冠軍會員', recoverK: null, outreach: false,      pointsUsed: 8400,   pointsTotal: 21600, trigger: '—',                                owner: '—' },
+  { id: 'M-004119', name: '黃慧君', level: '高級',   city: '新竹', site: 'SH-1902', stage: 'active', churn: 6,  rfm: '冠軍會員', recoverK: null, outreach: false,      pointsUsed: 6200,   pointsTotal: 19800, trigger: '—',                                owner: '—' },
+  { id: 'M-009880', name: '王婉真', level: 'Platinum', city: '台中', site: 'SH-2755', stage: 'active', churn: 10, rfm: '忠誠主力', recoverK: null, outreach: false,    pointsUsed: 5200,   pointsTotal: 14000, trigger: '—',                                owner: '—' },
+  { id: 'M-012043', name: '蔡明哲', level: '一般',   city: '台北', site: 'SH-0411', stage: 'new',    churn: 12, rfm: '觀望新客', recoverK: null, outreach: false,      pointsUsed: 60,     pointsTotal: 124,   trigger: '安裝引導中',                       owner: '陳怡君' },
+  { id: 'M-012099', name: '周雅婷', level: '一般',   city: '新北', site: 'SH-1320', stage: 'new',    churn: 14, rfm: '觀望新客', recoverK: null, outreach: false,      pointsUsed: 40,     pointsTotal: 80,    trigger: '第一次成功待達成',                 owner: '陳怡君' },
+  { id: 'M-003355', name: '劉建國', level: 'Diamond', city: '台北', site: 'SH-0055', stage: 'active', churn: 4,  rfm: '冠軍會員', recoverK: null, outreach: false,    pointsUsed: 12000,  pointsTotal: 28400, trigger: '—',                                owner: '—' },
+  { id: 'M-007012', name: '鄭淑芬', level: 'Gold',   city: '桃園', site: 'SH-4002', stage: 'active', churn: 18, rfm: '一般活躍', recoverK: null, outreach: false,      pointsUsed: 200,    pointsTotal: 1240,  trigger: '—',                                owner: '—' },
+  { id: 'M-006401', name: '許志偉', level: 'Silver', city: '高雄', site: 'SH-3110', stage: 'sleep',  churn: 35, rfm: '需喚醒',   recoverK: 14,   outreach: 'dormant',  pointsUsed: 0,      pointsTotal: 320,   trigger: '本月使用率 < 20%',                owner: '張凱翔' },
+  { id: 'M-010512', name: '楊雅雯', level: '一般',   city: '台中', site: 'SH-2901', stage: 'risk',   churn: 58, rfm: '即將流失', recoverK: 66,   outreach: 'expire',   pointsUsed: 100,    pointsTotal: 560,   trigger: '訂閱 14 天到期 · 使用驟降',        owner: '林佩蓉' },
+  { id: 'M-002288', name: '趙文德', level: 'Bronze', city: '台南', site: 'SH-5088', stage: 'gone',   churn: 88, rfm: '已流失',   recoverK: null, outreach: false,      pointsUsed: 0,      pointsTotal: 68,    trigger: '訂閱過期 90+ 天',                  owner: '—' },
+  { id: 'M-008977', name: '簡美玲', level: 'Gold',   city: '台北', site: 'SH-0233', stage: 'active', churn: 9,  rfm: '忠誠主力', recoverK: null, outreach: false,      pointsUsed: 720,    pointsTotal: 1240,  trigger: '—',                                owner: '—' },
+  { id: 'M-011666', name: '邱建華', level: '一般',   city: '新北', site: 'SH-1455', stage: 'risk',   churn: 61, rfm: '即將流失', recoverK: 54,   outreach: 'device',   pointsUsed: 80,     pointsTotal: 440,   trigger: '設備離線 · 濾網逾期',              owner: '張凱翔' },
+  { id: 'M-009501', name: '賴怡君', level: 'Platinum', city: '台中', site: 'SH-2640', stage: 'active', churn: 7, rfm: '忠誠主力', recoverK: null, outreach: false,    pointsUsed: 1820,   pointsTotal: 2840,  trigger: '—',                                owner: '—' },
+]
+
+// 王敬梅完整 360° mock(WANG_PROFILE + WANG_MEMBER_EXT)已搬到 mocks/module-b.ts
+// Module B 個人 360° 視圖 + Module E 跨模組跳轉皆從 module-b import
+// 若要在 Module E 引用王敬梅資料,請 import from './module-b' (不再 re-export)
+
 // ── KPI Cards ────────────────────────────────────────────────────────────────
 export interface MemberKPI {
   lbl: string
@@ -13,9 +101,9 @@ export interface MemberKPI {
 
 export const MEMBER_KPIS: MemberKPI[] = [
   {
-    lbl: '總會員數', val: '3,248', u: '位', delta: '+342 本月', dir: 'up',
+    lbl: '總會員數', val: '8,420', u: '位', delta: '+342 本月', dir: 'up',
     accent: 'purple',
-    spark: [2800, 2900, 2980, 3020, 3060, 3100, 3140, 3180, 3210, 3248],
+    spark: [7820, 7940, 8020, 8080, 8160, 8220, 8280, 8340, 8390, 8420],
   },
   {
     lbl: '活躍率', val: '68.4', u: '%', delta: '+1.8 pp', dir: 'up',
@@ -28,7 +116,7 @@ export const MEMBER_KPIS: MemberKPI[] = [
     spark: [200, 220, 240, 260, 275, 290, 300, 315, 330, 342],
   },
   {
-    lbl: '挽回估值', val: '840', u: 'K · NT$', delta: 'AI 預估', dir: 'up',
+    lbl: '挽回估值', val: '840', u: 'K · NT$', delta: '37 位預估可挽回', dir: 'up',
     accent: 'red',
     spark: [620, 660, 700, 720, 740, 760, 790, 810, 825, 840],
   },
@@ -47,7 +135,7 @@ export interface DailyChannel {
 
 export const DAILY_CHANNELS: DailyChannel[] = [
   {
-    k: 'edm', nm: 'EDM · 電子報', sub: '每週四發送 · 訂閱 6,842',
+    k: 'edm', nm: 'EDM · 電子報', sub: '渠道受眾 · 訂閱 6,842(非會員母體)',
     stats: [
       { l: '送達', v: '6,720', sub: '98.2%' },
       { l: '開信率', v: '42.4%', sub: '↑ +2.1 pp', good: true },
@@ -57,7 +145,7 @@ export const DAILY_CHANNELS: DailyChannel[] = [
     target: 35, actual: 42.4, c: '#4F46E5',
   },
   {
-    k: 'app', nm: 'APP · 月活', sub: '6,420 位有 APP 帳號',
+    k: 'app', nm: 'APP · 月活', sub: '渠道受眾 · 6,420 位有 APP 帳號',
     stats: [
       { l: 'MAU', v: '4,128', sub: '64.3%' },
       { l: 'DAU', v: '1,842', sub: 'DAU/MAU 44.6%' },
@@ -67,7 +155,7 @@ export const DAILY_CHANNELS: DailyChannel[] = [
     target: 60, actual: 64.3, c: '#0E7A66',
   },
   {
-    k: 'line', nm: 'LINE OA', sub: '好友 7,842',
+    k: 'line', nm: 'LINE OA', sub: '渠道受眾 · 好友 7,842(非會員母體)',
     stats: [
       { l: '送達', v: '7,820', sub: '99.8%' },
       { l: '開啟率', v: '78.4%', sub: '↑ +1.8 pp', good: true },
@@ -86,12 +174,13 @@ export interface LifecycleStage {
   c: string
 }
 
+// 五階段加總必須 = POPULATION.totalMembers 8,420 (解 #2)
 export const LIFECYCLE_STAGES: LifecycleStage[] = [
-  { k: 'new',  l: '新會員',    n: 184,  c: '#16A34A' },
-  { k: 'act',  l: '活躍',      n: 6842, c: '#0E7A66' },
+  { k: 'new',  l: '新會員',    n: 342,  c: '#16A34A' },
+  { k: 'act',  l: '活躍',      n: 5760, c: '#0E7A66' },
   { k: 'slp',  l: '沉睡',      n: 1284, c: '#D97706' },
   { k: 'risk', l: '流失預警',  n: 268,  c: '#DC2626' },
-  { k: 'gone', l: '流失·挽回', n: 96,   c: '#6B7280' },
+  { k: 'gone', l: '流失·挽回', n: 766,  c: '#6B7280' },
 ]
 
 export interface LifecycleFlow {
@@ -178,6 +267,8 @@ export interface MemberSignal {
   sev: 'r' | 'y' | 'g'
 }
 
+export type OutreachStatus = 'pending' | 'contacting' | 'done'
+
 export interface OutreachMember {
   id: string
   nm: string
@@ -188,7 +279,7 @@ export interface OutreachMember {
   ltv: number
   churn: number
   sev: SevLevel
-  sla: { txt: string; cls: string }
+  sla: { txt: string; cls: string; overdue?: boolean }
   last: string
   cs: string
   cha: 'phone' | 'line'
@@ -196,15 +287,19 @@ export interface OutreachMember {
   sig: MemberSignal[]
   recoverVal: string
   actions: string[]
+  owner: string            // 負責人(P1 #5,對齊 MEMBER_MASTER.owner)
+  status: OutreachStatus   // 進度狀態(P1 #5)
 }
 
+// 10 位待聯繫範例(主檔內 outreach != false 者)· 對齊 P0 #3 #4 #5
+// 加總 recoverVal = 650K · 註腳「+ 其餘 27 位約 190K = 840K」
 export const OUTREACH_MEMBERS: OutreachMember[] = [
   {
     id: 'M-008412', nm: '陳俊宏', av: '陳', lv: '高級', tier: 'g',
     addr: '台北 · 信義居家 SH-0021',
     ltv: 184, churn: 64, sev: 'high',
-    sla: { txt: '剩 6 小時', cls: 'r' },
-    last: '14 天前', cs: '王 (高級顧問)', cha: 'phone',
+    sla: { txt: '剩 6 小時', cls: 'r', overdue: false },
+    last: '14 天前', cs: '林佩蓉', cha: 'phone',
     reason: '訂閱 27 天到期 · 使用率 18% · 設備離線',
     sig: [
       { m: 'A', t: 'PM2.5 連 5 天超標 (峰值 84)', when: '今 09:12', sev: 'r' },
@@ -214,13 +309,14 @@ export const OUTREACH_MEMBERS: OutreachMember[] = [
     ],
     recoverVal: 'NT$ 184K',
     actions: ['致電', '排程', 'LINE'],
+    owner: '林佩蓉', status: 'contacting',
   },
   {
     id: 'M-007738', nm: '李文芳', av: '李', lv: '一般', tier: 'n',
     addr: '台北 · 大安辦公室 SH-0033',
     ltv: 88, churn: 51, sev: 'high',
-    sla: { txt: '今日 17:00', cls: 'r' },
-    last: '32 天前', cs: '林 (顧問)', cha: 'line',
+    sla: { txt: '今日 17:00', cls: 'r', overdue: true },
+    last: '32 天前', cs: '林佩蓉', cha: 'line',
     reason: '訂閱 14 天內到期 · 連續 28 天 0 開機',
     sig: [
       { m: 'F', t: '訂閱 14 天內到期', when: '系統', sev: 'r' },
@@ -229,13 +325,14 @@ export const OUTREACH_MEMBERS: OutreachMember[] = [
     ],
     recoverVal: 'NT$ 88K',
     actions: ['LINE', '排程'],
+    owner: '林佩蓉', status: 'pending',
   },
   {
     id: 'M-009203', nm: '王淑芬', av: '王', lv: '高級', tier: 'g',
     addr: '台中 · 科技園區 SH-2841',
     ltv: 12, churn: 22, sev: 'mid',
     sla: { txt: '24 小時', cls: 'y' },
-    last: '昨日', cs: '張 (技術)', cha: 'phone',
+    last: '昨日', cs: '張凱翔', cha: 'phone',
     reason: '濾網逾期 18 天 · TVOC 警示頻發',
     sig: [
       { m: 'D', t: '濾網逾期 18 天未換 (3 台)', when: '今', sev: 'r' },
@@ -244,13 +341,14 @@ export const OUTREACH_MEMBERS: OutreachMember[] = [
     ],
     recoverVal: 'NT$ 12K',
     actions: ['排程派工', '致電'],
+    owner: '張凱翔', status: 'contacting',
   },
   {
     id: 'M-005611', nm: '張志明', av: '張', lv: '一般', tier: 'n',
     addr: '新北 · 板橋 SH-1147',
     ltv: 24, churn: 28, sev: 'mid',
     sla: { txt: '48 小時', cls: 'y' },
-    last: '8 天前', cs: '林 (顧問)', cha: 'phone',
+    last: '8 天前', cs: '張凱翔', cha: 'phone',
     reason: '健康諮詢預約逾期 · 分數下降',
     sig: [
       { m: 'G', t: '健康諮詢預約逾期 3 天', when: '本週', sev: 'y' },
@@ -258,13 +356,14 @@ export const OUTREACH_MEMBERS: OutreachMember[] = [
     ],
     recoverVal: 'NT$ 24K',
     actions: ['致電', 'LINE'],
+    owner: '張凱翔', status: 'pending',
   },
   {
     id: 'M-010055', nm: '林雅琪', av: '林', lv: '一般', tier: 'n',
     addr: '桃園 · 中壢 SH-4119',
     ltv: 38, churn: 15, sev: 'lo',
     sla: { txt: '本週', cls: '' },
-    last: '6 天前', cs: '未指派', cha: 'line',
+    last: '6 天前', cs: '陳怡君', cha: 'line',
     reason: '推薦邀請 3 次未成功 · 高潛在推薦人',
     sig: [
       { m: 'G', t: '推薦邀請 3 次未成功 (近 30 天)', when: '本月', sev: 'y' },
@@ -272,13 +371,14 @@ export const OUTREACH_MEMBERS: OutreachMember[] = [
     ],
     recoverVal: 'NT$ 38K',
     actions: ['LINE', '邀請工具'],
+    owner: '陳怡君', status: 'contacting',
   },
   {
     id: 'M-006822', nm: '黃建中', av: '黃', lv: '高級', tier: 'g',
     addr: '高雄 · 鼓山 SH-3052',
-    ltv: 92, churn: 38, sev: 'lo',
+    ltv: 92, churn: 38, sev: 'mid',
     sla: { txt: '本週', cls: '' },
-    last: '46 天前', cs: '王 (高級顧問)', cha: 'phone',
+    last: '46 天前', cs: '林佩蓉', cha: 'phone',
     reason: 'TVOC 異常 · App 30 天未開啟',
     sig: [
       { m: 'A', t: 'TVOC 異常但設備未排除', when: '本週', sev: 'y' },
@@ -286,6 +386,66 @@ export const OUTREACH_MEMBERS: OutreachMember[] = [
     ],
     recoverVal: 'NT$ 92K',
     actions: ['致電', '排程'],
+    owner: '林佩蓉', status: 'pending',
+  },
+  {
+    id: 'M-011204', nm: '黃健宇', av: '黃', lv: '一般', tier: 'n',
+    addr: '台南 · 東區 SH-5210',
+    ltv: 78, churn: 72, sev: 'high',
+    sla: { txt: '逾期 8h', cls: 'r', overdue: true },
+    last: '54 天前', cs: '張凱翔', cha: 'phone',
+    reason: '使用率驟降 · 未回應',
+    sig: [
+      { m: 'B', t: '本月使用率 6%', when: '本週', sev: 'r' },
+      { m: 'F', t: '訂閱已過期 3 天', when: '系統', sev: 'r' },
+    ],
+    recoverVal: 'NT$ 78K',
+    actions: ['致電', 'LINE'],
+    owner: '張凱翔', status: 'pending',
+  },
+  {
+    id: 'M-006401', nm: '許志偉', av: '許', lv: 'Silver', tier: 'n',
+    addr: '高雄 · 三民 SH-3110',
+    ltv: 14, churn: 35, sev: 'mid',
+    sla: { txt: '本週', cls: '' },
+    last: '21 天前', cs: '張凱翔', cha: 'line',
+    reason: '本月使用率 < 20%',
+    sig: [
+      { m: 'B', t: '使用率 18% (平均 72%)', when: '本週', sev: 'y' },
+    ],
+    recoverVal: 'NT$ 14K',
+    actions: ['LINE', '排程'],
+    owner: '張凱翔', status: 'done',
+  },
+  {
+    id: 'M-010512', nm: '楊雅雯', av: '楊', lv: '一般', tier: 'n',
+    addr: '台中 · 北屯 SH-2901',
+    ltv: 66, churn: 58, sev: 'high',
+    sla: { txt: '48 小時', cls: 'y' },
+    last: '18 天前', cs: '林佩蓉', cha: 'phone',
+    reason: '訂閱 14 天到期 · 使用驟降',
+    sig: [
+      { m: 'F', t: '訂閱 14 天內到期', when: '系統', sev: 'r' },
+      { m: 'B', t: '本月使用率 22%', when: '本週', sev: 'y' },
+    ],
+    recoverVal: 'NT$ 66K',
+    actions: ['致電', 'LINE'],
+    owner: '林佩蓉', status: 'contacting',
+  },
+  {
+    id: 'M-011666', nm: '邱建華', av: '邱', lv: '一般', tier: 'n',
+    addr: '新北 · 三重 SH-1455',
+    ltv: 54, churn: 61, sev: 'high',
+    sla: { txt: '24 小時', cls: 'r' },
+    last: '12 天前', cs: '張凱翔', cha: 'phone',
+    reason: '設備離線 · 濾網逾期',
+    sig: [
+      { m: 'A', t: '2 台設備離線 36h', when: '今', sev: 'r' },
+      { m: 'D', t: '濾網逾期 22 天', when: '今', sev: 'r' },
+    ],
+    recoverVal: 'NT$ 54K',
+    actions: ['排程派工', '致電'],
+    owner: '張凱翔', status: 'pending',
   },
 ]
 
@@ -307,29 +467,30 @@ export interface ChurnTier {
   members: { nm: string; id: string; pct: number; reason: string }[]
 }
 
+// 三 tier 對齊 MEMBER_MASTER · 解 #4(姓名/編號全一致)
 export const CHURN_TIERS: ChurnTier[] = [
   {
     label: '高風險', count: 23, pctRange: '>60%', c: '#DC2626', cls: 'r',
     members: [
-      { nm: '陳俊宏', id: 'M-008412', pct: 64, reason: '設備離線 + 訂閱到期' },
-      { nm: '李文芳', id: 'M-007738', pct: 58, reason: '28 天未開機 + 到期' },
       { nm: '黃健宇', id: 'M-011204', pct: 72, reason: '使用率驟降 + 未回應' },
+      { nm: '陳俊宏', id: 'M-008412', pct: 64, reason: '設備離線 + 訂閱到期' },
+      { nm: '邱建華', id: 'M-011666', pct: 61, reason: '設備離線 + 濾網逾期' },
     ],
   },
   {
     label: '中風險', count: 58, pctRange: '30–60%', c: '#D97706', cls: 'y',
     members: [
-      { nm: '張志明', id: 'M-005611', pct: 42, reason: '諮詢逾期 + 分數下降' },
+      { nm: '楊雅雯', id: 'M-010512', pct: 58, reason: '訂閱 14 天到期 + 驟降' },
       { nm: '黃建中', id: 'M-006822', pct: 38, reason: 'App 未開啟 + TVOC' },
-      { nm: '林芳瑜', id: 'M-004178', pct: 35, reason: '使用率下降' },
+      { nm: '許志偉', id: 'M-006401', pct: 35, reason: '本月使用率 < 20%' },
     ],
   },
   {
     label: '低風險', count: 186, pctRange: '<30%', c: '#16A34A', cls: 'g',
     members: [
+      { nm: '張志明', id: 'M-005611', pct: 28, reason: '諮詢逾期 + 分數下降' },
       { nm: '王淑芬', id: 'M-009203', pct: 22, reason: '濾網逾期' },
       { nm: '林雅琪', id: 'M-010055', pct: 15, reason: '推薦追蹤' },
-      { nm: '吳承翰', id: 'M-005208', pct: 8, reason: '健康指數穩定' },
     ],
   },
 ]

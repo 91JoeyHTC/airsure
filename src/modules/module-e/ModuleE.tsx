@@ -1,5 +1,6 @@
 /* AirSure — Module E (會員經營) */
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
@@ -207,7 +208,7 @@ function ESegments() {
       </div>
 
       {segGroup !== 'new' && (
-        <div className="sg-grid" style={{ marginTop: 16 }}>
+        <div className="seg-cards" style={{ marginTop: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
           {segments.map(s => (
             <div key={s.k} className={`sg ${s.cls}`}>
               <div className="hd">
@@ -311,7 +312,7 @@ function ESegments() {
 
 // ─── Outreach Tab ─────────────────────────────────────────────────────────────
 
-function EOutreach() {
+function EOutreach({ onPickMember }: { onPickMember: (id: string) => void }) {
   const [filter, setFilter] = useState('all')
   const [selected, setSelected] = useState<Set<string>>(new Set(['M-008412', 'M-007738']))
 
@@ -324,8 +325,37 @@ function EOutreach() {
   const sevColor = (sev: string) => sev === 'high' ? 'var(--as-danger)' : sev === 'mid' ? 'var(--as-warning)' : 'var(--as-success)'
   const modColor = (m: string) => (m === 'A' || m === 'B') ? '#0E7A66' : 'var(--as-cdefg)'
 
+  // P1 #6:SLA 逾期警示 — 統計即將逾期(< 24h) / 已逾期 兩數
+  const urgentCount = OUTREACH_MEMBERS.filter(m => m.sla.cls === 'r' && !m.sla.overdue).length
+  const overdueCount = OUTREACH_MEMBERS.filter(m => m.sla.overdue).length
+
+  // 狀態膠囊配色
+  const statusMeta = (s: string) =>
+    s === 'pending'    ? { l: '未開始', bg: '#FEF3E2', fg: '#92400E' } :
+    s === 'contacting' ? { l: '聯繫中', bg: '#DBEAFE', fg: '#1E40AF' } :
+                         { l: '已完成', bg: '#DCFCE7', fg: '#166534' }
+
   return (
     <>
+      {/* P1 #6:SLA 逾期 alert bar — 整頁頂部第一眼可辨 */}
+      {(urgentCount + overdueCount) > 0 && (
+        <div style={{
+          marginTop: 16, padding: '10px 14px',
+          background: overdueCount > 0 ? '#FEE2E2' : '#FEF3E2',
+          border: `1px solid ${overdueCount > 0 ? '#FCA5A5' : '#FCD34D'}`,
+          borderLeft: `4px solid ${overdueCount > 0 ? 'var(--as-danger)' : 'var(--as-warning)'}`,
+          borderRadius: 8,
+          display: 'flex', alignItems: 'center', gap: 12, fontSize: 13,
+        }}>
+          <span style={{ fontSize: 18 }}>⚠</span>
+          <span style={{ fontWeight: 700, color: overdueCount > 0 ? 'var(--as-danger)' : '#92400E' }}>
+            {overdueCount > 0 && <>已逾期 <span style={{ fontFamily: 'var(--f-mono)' }}>{overdueCount}</span> 筆 · </>}
+            {'即將逾期(< 24h) '}<span style={{ fontFamily: 'var(--f-mono)' }}>{urgentCount}</span> 筆
+          </span>
+          <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>· 請優先處理紅色標示列</span>
+        </div>
+      )}
+
       {/* Filter chips */}
       <div className="fb" style={{ marginTop: 16 }}>
         {OUTREACH_FILTERS.map(f => (
@@ -361,13 +391,22 @@ function EOutreach() {
               <th>觸發訊號</th>
               <th>SLA 緊迫度</th>
               <th>挽回估值</th>
+              <th>負責人 / 狀態</th>
               <th>行動</th>
             </tr>
           </thead>
           <tbody>
             {OUTREACH_MEMBERS.map(m => (
-              <tr key={m.id} style={{ cursor: 'pointer', background: selected.has(m.id) ? 'var(--as-bg)' : undefined }}>
-                <td>
+              <tr
+                key={m.id}
+                onClick={() => onPickMember(m.id)}
+                style={{
+                  cursor: 'pointer',
+                  background: m.sla.overdue ? '#FEF2F2' : selected.has(m.id) ? 'var(--as-bg)' : undefined,
+                  borderLeft: m.sla.overdue ? '3px solid var(--as-danger)' : undefined,
+                }}
+              >
+                <td onClick={e => e.stopPropagation()}>
                   <div
                     onClick={() => toggleSel(m.id)}
                     style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${selected.has(m.id) ? 'var(--as-cdefg)' : 'var(--as-line)'}`, background: selected.has(m.id) ? 'var(--as-cdefg)' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, cursor: 'pointer' }}
@@ -398,8 +437,13 @@ function EOutreach() {
                   </div>
                 </td>
                 <td>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 8px', borderRadius: 5, background: m.sev === 'high' ? '#FEE2E2' : m.sev === 'mid' ? '#FFFBEB' : '#F0FDF4', color: sevColor(m.sev), fontWeight: 600 }}>
-                    <Icon name="cal" size={10} /> {m.sla.txt}
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 8px', borderRadius: 5,
+                    background: m.sla.overdue ? 'var(--as-danger)' : m.sev === 'high' ? '#FEE2E2' : m.sev === 'mid' ? '#FFFBEB' : '#F0FDF4',
+                    color: m.sla.overdue ? '#fff' : sevColor(m.sev),
+                    fontWeight: 700,
+                  }}>
+                    {m.sla.overdue ? '⚠' : <Icon name="cal" size={10} />} {m.sla.txt}
                   </span>
                   <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 2 }}>最後聯繫 {m.last}</div>
                 </td>
@@ -408,6 +452,19 @@ function EOutreach() {
                   <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>流失 {m.churn}%</div>
                 </td>
                 <td>
+                  {(() => {
+                    const sm = statusMeta(m.status)
+                    return (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--as-ink)' }}>{m.owner}</div>
+                        <span style={{ display: 'inline-block', marginTop: 4, fontSize: 10, padding: '2px 8px', borderRadius: 4, background: sm.bg, color: sm.fg, fontWeight: 600 }}>
+                          {sm.l}
+                        </span>
+                      </>
+                    )
+                  })()}
+                </td>
+                <td onClick={e => e.stopPropagation()}>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {m.actions.slice(0, 2).map((a, i) => (
                       <button key={i} className="btn" style={{ fontSize: 11, padding: '3px 8px' }}>{a}</button>
@@ -420,8 +477,25 @@ function EOutreach() {
         </table>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--as-bg)', borderRadius: 6, fontSize: 11, color: 'var(--as-mute)', display: 'flex', justifyContent: 'space-between' }}>
-        <span>顯示 6 位 / 共 37 位需主動聯繫會員</span>
+        <span>顯示 {OUTREACH_MEMBERS.length} 位 / 共 37 位需主動聯繫會員</span>
         <span style={{ color: 'var(--as-cdefg)', cursor: 'pointer' }}>查看全部 37 位 →</span>
+      </div>
+
+      {/* P1 #7:包含關係說明 — 數字之間如何對得起來 */}
+      <div style={{ marginTop: 10, padding: '10px 14px', background: '#F9FAFB', border: '1px solid var(--as-line-2)', borderRadius: 6, fontSize: 11, color: 'var(--as-ink-2)', lineHeight: 1.7 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--as-ink)' }}>📐 數字關係</span>
+          <span style={{ color: 'var(--as-mute)' }}>各 tab 與母體之間的包含關係(避免互打架)</span>
+        </div>
+        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--as-ink-2)' }}>
+          主動聯繫 <b style={{ color: 'var(--as-cdefg)' }}>37 位</b> = 訂閱到期 15 + 設備異常 10 + 長期未活躍 8 + 推薦追蹤 4
+        </div>
+        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--as-ink-2)' }}>
+          挽回估值 <b style={{ color: 'var(--as-success)' }}>NT$ 840K</b> = 顯示 {OUTREACH_MEMBERS.length} 位加總 650K + 其餘 27 位約 190K(平均 7.0K/位)
+        </div>
+        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--as-ink-2)' }}>
+          流失預警 268 位 ⊃ 主動聯繫 37 位 ⊃ 高風險(流失 &gt; 60%) 23 位
+        </div>
       </div>
     </>
   )
@@ -429,11 +503,29 @@ function EOutreach() {
 
 // ─── Churn Prediction Tab ─────────────────────────────────────────────────────
 
-function EChurn() {
+function EChurn({ onPickMember }: { onPickMember: (id: string) => void }) {
   return (
     <>
+      {/* P1 #8:模型版本與更新日 — 政府評審常問 retrain 頻率 */}
+      <div style={{
+        marginTop: 16, padding: '8px 14px',
+        background: '#F5F3FF', border: '1px solid #DDD6FE', borderLeft: '3px solid var(--as-cdefg)',
+        borderRadius: 6,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', fontSize: 12,
+      }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="sparkles" size={12} />
+          <span style={{ fontWeight: 700, color: 'var(--as-cdefg)' }}>流失預測模型</span>
+        </span>
+        <span style={{ color: 'var(--as-ink-2)' }}>版本 <b className="mono">v3.2</b></span>
+        <span style={{ color: 'var(--as-ink-2)' }}>最後更新 <b className="mono">2026/05/01</b></span>
+        <span style={{ color: 'var(--as-ink-2)' }}>retrain 頻率 <b>每月</b></span>
+        <span style={{ color: 'var(--as-ink-2)' }}>訓練樣本 <b className="mono">8,420</b> 位 · <b className="mono">36</b> 月歷史</span>
+        <span style={{ marginLeft: 'auto', color: 'var(--as-mute)' }}>下次 retrain 2026/06/01</span>
+      </div>
+
       {/* Model performance */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 12 }}>
         {[
           { lbl: 'AUC-ROC', val: '0.87', u: '/ 1.00', sub: '較 v3.1 +0.04', pct: 87 },
           { lbl: 'Precision', val: '82', u: '%', sub: '100 預警 → 82 真實', pct: 82 },
@@ -466,7 +558,11 @@ function EChurn() {
             </div>
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {tier.members.map(mem => (
-                <div key={mem.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--as-bg)', borderRadius: 6 }}>
+                <div
+                  key={mem.id}
+                  onClick={() => onPickMember(mem.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--as-bg)', borderRadius: 6, cursor: 'pointer' }}
+                >
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: tier.c, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 12 }}>{mem.nm} <span className="mono" style={{ fontSize: 10, color: 'var(--as-mute)' }}>{mem.id}</span></div>
@@ -522,7 +618,7 @@ function EChurn() {
 
 // ─── Points Management Tab ────────────────────────────────────────────────────
 
-function EPoints() {
+function EPoints({ onPickMember }: { onPickMember: (id: string) => void }) {
   return (
     <>
       <div className="card" style={{ marginTop: 16 }}>
@@ -587,13 +683,18 @@ function EPoints() {
           <div className="ch"><h3>本月積點兌換排行</h3><div className="csub">前 5 位高積點會員</div></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
             {[
-              { rk: 1, nm: '陳俊宏', id: 'M-008412', pts: 28400, used: 12000, tier: '#B45309' },
-              { rk: 2, nm: '吳承翰', id: 'M-005208', pts: 21600, used: 8400, tier: '#B45309' },
-              { rk: 3, nm: '黃慧君', id: 'M-004119', pts: 19800, used: 6200, tier: '#B45309' },
-              { rk: 4, nm: '林雅琪', id: 'M-010055', pts: 16200, used: 4800, tier: '#4F46E5' },
-              { rk: 5, nm: '王婉真', id: 'M-009203', pts: 14000, used: 5200, tier: '#B45309' },
+              // 排行對齊 MEMBER_MASTER:#1 改劉建國(Diamond·活躍·流失 4%),避免高流失客當積點冠軍(解 #4)
+              { rk: 1, nm: '劉建國', id: 'M-003355', pts: 28400, used: 12000, tier: '#A855F7' },
+              { rk: 2, nm: '吳承翰', id: 'M-005208', pts: 21600, used: 8400,  tier: '#B45309' },
+              { rk: 3, nm: '黃慧君', id: 'M-004119', pts: 19800, used: 6200,  tier: '#B45309' },
+              { rk: 4, nm: '林雅琪', id: 'M-010055', pts: 16200, used: 4800,  tier: '#4F46E5' },
+              { rk: 5, nm: '王婉真', id: 'M-009880', pts: 14000, used: 5200,  tier: '#0E7A66' },
             ].map(a => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                key={a.id}
+                onClick={() => onPickMember(a.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 6px', borderRadius: 4 }}
+              >
                 <div style={{ width: 20, fontFamily: 'var(--f-mono)', fontWeight: 700, color: a.rk <= 3 ? '#B45309' : 'var(--as-mute)', fontSize: 12 }}>#{a.rk}</div>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', background: a.tier + '18', border: `1.5px solid ${a.tier}`, color: a.tier, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>{a.nm[0]}</div>
                 <div style={{ flex: 1 }}>
@@ -610,10 +711,19 @@ function EPoints() {
   )
 }
 
+
 // ─── Module E Root ────────────────────────────────────────────────────────────
 
 export function ModuleE() {
-  const [tab, setTab] = useState('daily')
+  // 預設 tab 改成「主動聯繫名單」(P1 #9):進頁第一眼看到「今天要處理什麼」
+  const [tab, setTab] = useState('outreach')
+
+  // 2026-05-28:會員 360° 已整合進 Module B 的「個人 360° 視圖」
+  // Module E 內各表格 row 點擊 → 跳 /module-b 並用 router state 帶會員 ID
+  const navigate = useNavigate()
+  const openMemberById = (id: string) => {
+    navigate('/module-b', { state: { gotoIndividual: true, memberId: id } })
+  }
 
   return (
     <PageShell
@@ -628,38 +738,41 @@ export function ModuleE() {
         </>
       }
       tabs={[
-        { k: 'daily',    l: '日常經營',     n: null },
-        { k: 'segments', l: '分群管理',     n: null },
-        { k: 'outreach', l: '主動聯繫名單', n: 37 },
-        { k: 'churn',    l: '流失預測',     n: 267 },
-        { k: 'points',   l: '積點管理',     n: null },
+        // 依「module-e-tab命名與順序調整.md」:依工作動線(從洞察到行動)排
+        { k: 'daily',    l: '總覽',          n: null },   // 改名:日常經營 → 總覽
+        { k: 'outreach', l: '主動聯繫名單',  n: 37 },
+        { k: 'churn',    l: '流失預測',      n: 267 },
+        { k: 'segments', l: '分群管理',      n: null },
+        { k: 'points',   l: '積點管理',      n: null },
       ]}
       activeTab={tab}
       onTab={setTab}
     >
-      {/* KPI Cards */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        {MEMBER_KPIS.map(kpi => (
-          <div key={kpi.lbl} className={`kpi ${kpi.accent}`}>
-            <div className="lbl">{kpi.lbl}</div>
-            <div className="val">{kpi.val}<span className="u">{kpi.u}</span></div>
-            <div className="ft">
-              <span className={`delta ${kpi.dir}`}>
-                {kpi.dir === 'up' && <Icon name="up" size={11} />}
-                {kpi.dir === 'dn' && <Icon name="down" size={11} />}
-                {kpi.delta}
-              </span>
-              <Sparkline data={kpi.spark} color="var(--as-cdefg)" />
+      {/* KPI 4 卡只在「總覽」顯示;其他 tab 各自有對應 hero/alert/工具列(依用戶要求 2026-05-28) */}
+      {tab === 'daily' && (
+        <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          {MEMBER_KPIS.map(kpi => (
+            <div key={kpi.lbl} className={`kpi ${kpi.accent}`}>
+              <div className="lbl">{kpi.lbl}</div>
+              <div className="val">{kpi.val}<span className="u">{kpi.u}</span></div>
+              <div className="ft">
+                <span className={`delta ${kpi.dir}`}>
+                  {kpi.dir === 'up' && <Icon name="up" size={11} />}
+                  {kpi.dir === 'dn' && <Icon name="down" size={11} />}
+                  {kpi.delta}
+                </span>
+                <Sparkline data={kpi.spark} color="var(--as-cdefg)" />
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {tab === 'daily' && <EDaily />}
+      {tab === 'daily'    && <EDaily />}
       {tab === 'segments' && <ESegments />}
-      {tab === 'outreach' && <EOutreach />}
-      {tab === 'churn' && <EChurn />}
-      {tab === 'points' && <EPoints />}
+      {tab === 'outreach' && <EOutreach onPickMember={openMemberById} />}
+      {tab === 'churn'    && <EChurn onPickMember={openMemberById} />}
+      {tab === 'points'   && <EPoints onPickMember={openMemberById} />}
     </PageShell>
   )
 }

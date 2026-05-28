@@ -346,8 +346,8 @@
   overflow: hidden;
 }
 .kpi .lbl { font-size: 11px; color: var(--as-mute); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
-.kpi .val { font-size: 32px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; }
-.kpi .val .u { font-size: 13px; color: var(--as-mute); font-weight: 400; margin-left: 6px; letter-spacing: 0; }
+.kpi .val { font-size: 32px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .val .u { font-size: 13px; color: var(--as-mute); font-weight: 400; margin-left: 6px; letter-spacing: 0; white-space: nowrap; }
 .kpi .ft { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; font-size: 12px; }
 .kpi .delta { display: inline-flex; align-items: center; gap: 4px; color: var(--as-mute); }
 .kpi .delta.up { color: var(--as-success); }

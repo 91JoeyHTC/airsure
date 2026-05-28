@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
@@ -10,6 +11,7 @@ import {
   B_CHURN,
   B_MONTHS_12,
   WANG_PROFILE,
+  WANG_MEMBER_EXT,
 } from '../../mocks/module-b'
 
 // ── PM2.5 30-day mock data ─────────────────────────────────────────────────────
@@ -19,13 +21,7 @@ const PM25_30D = [
   19, 17, 15, 14, 18, 24, 28, 22, 19, 16,
 ]
 
-// ── Cross-module signal chips (H1 保留:客服視圖用) ─────────────────────────────
-const CROSS_SIGNALS = [
-  { mod: 'C', label: '服務管理', signal: '1 張待確認工單(2026-04-22 派工後)', cls: 'r' },
-  { mod: 'E', label: '會員經營', signal: 'E:蛋黃克人 · C 群 1 級', cls: 'p' },
-  { mod: 'F', label: '營收分析', signal: '累計 NT$128.9K · P72', cls: 'g' },
-  { mod: 'G', label: '健康證書', signal: '近季尚未發送 · 建議推送', cls: 'y' },
-]
+// CROSS_SIGNALS 已搬到 WANG_MEMBER_EXT.crossSignals(mock-b) · 跨模組信號 sub-tab 統一呈現
 
 // ── 分群層 v2 mock data ────────────────────────────────────────────────────────
 const SEG_MODES = [
@@ -998,11 +994,21 @@ function SegmentView() {
 // ──────────────────────────────────────────────────────────────────────────────
 // 個人層 view  ── 依「克立淨_客戶三角色彙整_欄位規格.md」三角色視圖
 // ──────────────────────────────────────────────────────────────────────────────
-type PSubTab = '主管視圖' | '客服視圖' | '顧問視圖' | '居家與畫像' | '訂閱與帳務'
+// 2026-05-28:Module E 的會員 360° 已整合進來,加上「觸及與商機」+「跨模組信號」
+// 「訂閱與帳務」改名為「訂閱、積點與帳務」(加積點區塊)
+// 「設備與到府」末尾補「流失預測 + What-If」(會員經營角度)
+// 2026-05-29:四視圖改為客戶面向命名(部門口吻 → 看客戶的哪一面)
+//   主管視圖 → 價值與風險 / 行銷視圖 → 觸及與商機 / 客服視圖 → 聯絡與歷程 / 顧問視圖 → 設備與到府
+type PSubTab = '價值與風險' | '觸及與商機' | '聯絡與歷程' | '設備與到府' | '居家與畫像' | '訂閱、積點與帳務' | '跨模組信號'
 
 function PersonaView() {
   const w = WANG_PROFILE
-  const [subTab, setSubTab] = useState<PSubTab>('主管視圖')
+  const e = WANG_MEMBER_EXT
+  const [subTab, setSubTab] = useState<PSubTab>('價值與風險')
+  // B1:Hero 4 個大數字預設收合(每天不變的資訊不再佔最大版面)
+  const [heroExpanded, setHeroExpanded] = useState(false)
+  // D:共用「補資料」任務 — 主管(缺口 62%) / 行銷(LINE −40%) / 客服(Email/Line 待補) 點任一鈕進同一流程
+  const [showMissingDataModal, setShowMissingDataModal] = useState(false)
 
   const stLabel = (st: 'g' | 'y' | 'r') => st === 'g' ? '正常' : st === 'y' ? '注意' : '警示'
   const stCls = (st: 'g' | 'y' | 'r') => st
@@ -1070,45 +1076,74 @@ function PersonaView() {
           </div>
         </div>
 
-        {/* A5 Stats row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, marginTop: 16, background: 'var(--as-line)', borderRadius: 8, overflow: 'hidden' }}>
-          {[
-            { v: `NT$${w.finance.totalAmt.toLocaleString()}`, lbl: '累計消費（公式）' },
-            { v: `NT$${w.finance.avgUnit.toLocaleString()}`,  lbl: '平均客單（公式）' },
-            { v: `${w.finance.servicesTotal} 次`,             lbl: `服務次數（${w.finance.services}+${w.finance.servicesImported}）` },
-            { v: `${w.finance.machineCount} 台`,              lbl: '持有機型' },
-          ].map(s => (
-            <div key={s.lbl} style={{ background: 'var(--as-bg)', padding: '10px 0', textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--f-mono)', color: 'var(--as-ink)' }}>{s.v}</div>
-              <div style={{ fontSize: 11, color: 'var(--as-mute)', marginTop: 2 }}>{s.lbl}</div>
-            </div>
-          ))}
+        {/* A5 Stats row(預設收合 · 點「展開摘要」才顯示;B1:每天不變的資訊不佔版面) */}
+        {heroExpanded && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 1, marginTop: 16, background: 'var(--as-line)', borderRadius: 8, overflow: 'hidden' }}>
+            {[
+              { v: `NT$${(w.finance.totalAmt / 1000).toFixed(1)}K`, lbl: `累計消費(銷 ${(w.finance.salesAmt / 1000).toFixed(0)}K + 維 ${(w.finance.repairAmt / 1000).toFixed(0)}K + 匯 ${(w.finance.importedAmt / 1000).toFixed(0)}K)` },
+              { v: `NT$${(w.finance.avgUnit / 1000).toFixed(1)}K`,  lbl: '平均客單(公式)' },
+              { v: `${w.finance.servicesTotal} 次`,                  lbl: `服務次數(系統 ${w.finance.services} + 匯入 ${w.finance.servicesImported})` },
+              { v: `${w.finance.machineCount} 台`,                   lbl: '持有機型' },
+            ].map(s => (
+              <div key={s.lbl} style={{ background: 'var(--as-bg)', padding: '10px 6px', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--f-mono)', color: 'var(--as-ink)', whiteSpace: 'nowrap' }}>{s.v}</div>
+                <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.lbl}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* B1 摺疊按鈕 — 把每天不變的資訊收起來,內容上移約一屏 */}
+        <div style={{ marginTop: 10, textAlign: 'center' }}>
+          <button
+            onClick={() => setHeroExpanded(!heroExpanded)}
+            style={{
+              padding: '4px 12px', fontSize: 11, color: 'var(--as-mute)',
+              background: 'transparent', border: '1px solid var(--as-line-2)', borderRadius: 12,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            {heroExpanded ? '收合摘要 ▴' : '展開摘要 ▾'}
+            <span style={{ fontSize: 10, opacity: 0.7 }}>
+              (累計 NT${(w.finance.totalAmt / 1000).toFixed(1)}K · 客單 NT${(w.finance.avgUnit / 1000).toFixed(1)}K · {w.finance.servicesTotal} 次 · {w.finance.machineCount} 台)
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* ── B1 Sub-tab nav · 三角色 + 共用 ── */}
+      {/* ── Sub-tab nav · 7 個一字排開(用戶要求:不要更多收合) ── */}
       <div className="b-subtabs" style={{ marginBottom: 16 }}>
-        {(['主管視圖', '客服視圖', '顧問視圖', '居家與畫像', '訂閱與帳務'] as const).map(k => (
+        {([
+          { k: '價值與風險',         role: '主管' as const | null, badge: null as number | null },
+          { k: '觸及與商機',         role: '行銷' as const | null, badge: e.marketing.segments.length },
+          { k: '聯絡與歷程',         role: '客服' as const | null, badge: w.todos.length },
+          { k: '設備與到府',         role: '顧問' as const | null, badge: w.devices.length },
+          { k: '居家與畫像',         role: null,                  badge: null },
+          { k: '訂閱、積點與帳務',   role: null,                  badge: null },
+          { k: '跨模組信號',         role: null,                  badge: e.crossSignals.length },
+        ] as const).map(t => (
           <button
-            key={k}
-            className={`b-subtab${subTab === k ? ' active' : ''}`}
-            onClick={() => setSubTab(k)}
+            key={t.k}
+            className={`b-subtab${subTab === t.k ? ' active' : ''}`}
+            onClick={() => setSubTab(t.k as PSubTab)}
           >
-            {k}
-            {k === '顧問視圖' && <span className="n" style={{ marginLeft: 4 }}>{w.devices.length}</span>}
-            {k === '客服視圖' && <span className="n" style={{ marginLeft: 4 }}>{w.todos.length}</span>}
+            {t.k}
+            {t.role && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--as-mute)', fontWeight: 400 }}>({t.role})</span>}
+            {t.badge != null && <span className="n" style={{ marginLeft: 4 }}>{t.badge}</span>}
           </button>
         ))}
       </div>
 
-      {/* B2 視角說明條 */}
+      {/* B2 客戶面向描述條 — 看客戶的哪一面(部門口吻 → 客戶面向口吻) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 16, background: 'var(--as-bg)', border: '1px solid var(--as-line)', borderRadius: 6, fontSize: 12, color: 'var(--as-mute)' }}>
         <Icon name="eye" size={12} />
-        {subTab === '主管視圖' && <span><b style={{ color: 'var(--as-ink-2)' }}>📊 主管視角：</b>看的是「值不值得投資源、有沒有風險」— 價值、風險、機會</span>}
-        {subTab === '客服視圖' && <span><b style={{ color: 'var(--as-ink-2)' }}>🎧 客服視角：</b>看的是「怎麼聯絡、上次發生什麼、這次該做什麼」— 聯絡、歷程、待辦</span>}
-        {subTab === '顧問視圖' && <span><b style={{ color: 'var(--as-ink-2)' }}>🩺 顧問視角：</b>看的是「到府前該帶什麼、預判什麼」— 設備、耗材、症狀、眉角</span>}
-        {subTab === '居家與畫像' && <span><b style={{ color: 'var(--as-ink-2)' }}>🏠 居家與畫像：</b>環境條件 + 困擾 + 個人標籤，輔以室內 PM2.5 佐證</span>}
-        {subTab === '訂閱與帳務' && <span><b style={{ color: 'var(--as-ink-2)' }}>💳 訂閱與帳務：</b>當前方案、累計消費明細、送修報價單</span>}
+        {subTab === '價值與風險'         && <span>📊 這位客戶的 <b style={{ color: 'var(--as-ink-2)' }}>價值與風險</b> — 累計貢獻、流失訊號、成長空間</span>}
+        {subTab === '觸及與商機'         && <span>📣 這位客戶 <b style={{ color: 'var(--as-ink-2)' }}>怎麼接觸、有什麼商機</b> — 管道、訴求、加值機會</span>}
+        {subTab === '聯絡與歷程'         && <span>🎧 這位客戶的 <b style={{ color: 'var(--as-ink-2)' }}>聯絡方式與服務歷程</b> — 怎麼聯絡、上次發生什麼、這次該做什麼</span>}
+        {subTab === '設備與到府'         && <span>🩺 這位客戶的 <b style={{ color: 'var(--as-ink-2)' }}>設備狀況與到府準備</b> — 帶什麼料、預判什麼、溝通眉角</span>}
+        {subTab === '居家與畫像'         && <span>🏠 這位客戶的 <b style={{ color: 'var(--as-ink-2)' }}>居家環境與個人畫像</b> — 環境條件 + 困擾 + 個人標籤,輔以室內 PM2.5 佐證</span>}
+        {subTab === '訂閱、積點與帳務'   && <span>💳 這位客戶的 <b style={{ color: 'var(--as-ink-2)' }}>訂閱、積點與帳務</b> — 當前方案、積點等級與兌換、累計消費明細、送修報價單</span>}
+        {subTab === '跨模組信號'         && <span>🔗 這位客戶在 <b style={{ color: 'var(--as-ink-2)' }}>各模組的足跡</b> — A 場域 / C 工單 / D 產品 / F 營收 / G 證書 / H 決策</span>}
       </div>
 
       {/* ── 三角色視圖共用容器:左主內容 + 右 G1 浮動 AI 側欄 ── */}
@@ -1116,7 +1151,7 @@ function PersonaView() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {/* ═══ 主管視圖 (§1 價值 / 風險 / 機會) ═══ */}
-        {subTab === '主管視圖' && (
+        {subTab === '價值與風險' && (
           <>
             {/* C1 客戶價值卡 + 升降趨勢 */}
             <div className="card">
@@ -1238,11 +1273,14 @@ function PersonaView() {
               </div>
             </div>
 
-            {/* C4 資料缺口旗標 */}
+            {/* C4 資料缺口旗標(D:統一補資料任務入口) */}
             <div className="card">
               <div className="ch">
-                <div><h3>資料缺口旗標</h3><div className="csub">影響分群精準度 · {w.dataGaps.length} 欄空白</div></div>
-                <span className="pill y">完整度 {w.identity.completeness}%</span>
+                <div><h3>資料缺口旗標</h3><div className="csub">影響分群精準度 · {w.dataGaps.length} 欄空白 · 行銷/客服視圖的「補資料」進同一流程</div></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="pill y">完整度 {w.identity.completeness}%</span>
+                  <button className="btn primary cdefg" style={{ fontSize: 12 }} onClick={() => setShowMissingDataModal(true)}>+ 開始補資料</button>
+                </div>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {w.dataGaps.map((g, i) => (
@@ -1256,80 +1294,183 @@ function PersonaView() {
           </>
         )}
 
-        {/* ═══ 客服視圖 (§2 聯絡 / 歷程 / 待辦) ═══ */}
-        {subTab === '客服視圖' && (
+        {/* ═══ 行銷視圖 (從 Module E 整合過來:分群、NPS、活動回應、下次推薦) ═══ */}
+        {subTab === '觸及與商機' && (
           <>
-            {/* D1 聯絡資訊 + D2 最近互動(2 欄) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div className="card">
-                <div className="ch"><div><h3>聯絡資訊</h3><div className="csub">缺項以黃底標示</div></div></div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>手機</span>
-                    <span className="mono">{w.contact.phone}</span>
+            {/* M1 生命週期 + 命中分群 */}
+            <div className="card">
+              <div className="ch">
+                <div><h3>生命週期 + 命中分群</h3><div className="csub">行銷命中 {e.marketing.segments.length} 群 · 階段:{e.marketing.lifecycleStage}</div></div>
+                <span className="pill g">{e.marketing.lifecycleStage}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {e.marketing.segments.map(s => (
+                  <span key={s.k} className={`pill ${s.cls}`} style={{ fontSize: 12, padding: '4px 10px' }}>{s.l}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* M2 NPS + 渠道互動 KPI */}
+            <div className="card">
+              <div className="ch">
+                <div><h3>NPS + 渠道互動</h3><div className="csub">EDM / LINE / APP 觸及與回應</div></div>
+              </div>
+              <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                <div className="kpi purple">
+                  <div className="lbl">NPS 評分</div>
+                  <div className="val">{e.marketing.npsScore}<span className="u">/10</span></div>
+                  {/* C2 #4:NPS 加趨勢 + 填答時間 */}
+                  <div className="ft" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                    <span className="delta up" style={{ fontSize: 11 }}>{e.marketing.npsTrend} · {e.marketing.npsCategory}</span>
+                    <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>填答 {e.marketing.npsLastAnswered}</span>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>Email</span>
-                    <span style={{ background: 'var(--as-warning-tint)', padding: '2px 8px', borderRadius: 4, color: '#713F12', fontSize: 12, fontWeight: 600 }}>待補</span>
+                </div>
+                <div className="kpi green">
+                  <div className="lbl">EDM 開信</div>
+                  <div className="val">{e.marketing.edmOpenRate}<span className="u">%</span></div>
+                  <div className="ft"><span className="delta">點擊 {e.marketing.edmClickRate}%</span></div>
+                </div>
+                <div className="kpi orange">
+                  <div className="lbl">LINE 連結</div>
+                  <div className="val" style={{ fontSize: 18 }}>{e.marketing.lineConnected ? '已連' : '未連'}</div>
+                  {/* C2 #1:LINE 未連加「補 LINE」可行動按鈕(連動補資料任務) */}
+                  <div className="ft" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                    <span className="delta dn" style={{ fontSize: 11 }}>影響觸及 −40%</span>
+                    {!e.marketing.lineConnected && (
+                      <button className="btn primary cdefg" style={{ fontSize: 10, padding: '3px 8px' }} onClick={() => setShowMissingDataModal(true)}>+ 補 LINE</button>
+                    )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>Line ID</span>
-                    <span style={{ background: 'var(--as-warning-tint)', padding: '2px 8px', borderRadius: 4, color: '#713F12', fontSize: 12, fontWeight: 600 }}>待補</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>可聯繫時間</span>
-                    <span>{w.contact.timePref}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>聯繫偏好</span>
-                    <span>{w.contact.channelPref}</span>
+                </div>
+                <div className="kpi green">
+                  <div className="lbl">推薦帶入</div>
+                  <div className="val">{e.marketing.referralCount}<span className="u">位</span></div>
+                  {/* C2 #2:推薦補潛力 + 「再邀推薦」按鈕 */}
+                  <div className="ft" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                    <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>貢獻 NT${(e.marketing.referralValue / 1000).toFixed(0)}K · 潛力 <b style={{ color: 'var(--as-success)' }}>{e.marketing.referralPotential}</b></span>
+                    <button className="btn primary ab" style={{ fontSize: 10, padding: '3px 8px' }}>再邀推薦</button>
                   </div>
                 </div>
               </div>
+              {/* 補:推薦潛力說明條 */}
+              <div style={{ marginTop: 10, padding: '6px 10px', background: 'var(--as-bg)', borderRadius: 4, fontSize: 11, color: 'var(--as-mute)' }}>
+                💡 {e.marketing.referralPotentialReason}
+              </div>
+            </div>
 
-              <div className="card">
-                <div className="ch"><div><h3>最近互動</h3><div className="csub">最新一次接觸資訊</div></div></div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>最近派工</span>
-                    <span className="mono">{w.recentActivity.lastDispatch}</span>
+            {/* M3 活動回應時間軸 */}
+            <div className="card">
+              <div className="ch">
+                <div><h3>活動回應記錄</h3><div className="csub">近 12 個月 · {e.marketing.campaignResponse.length} 檔活動回應</div></div>
+              </div>
+              <div>
+                {e.marketing.campaignResponse.map((c, i) => {
+                  const color = c.status === 'win' ? 'var(--as-success)' : c.status === 'ok' ? 'var(--as-cdefg)' : 'var(--as-mute-2)'
+                  return (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 16px 1fr auto', gap: '0 12px', alignItems: 'start', paddingBottom: i < e.marketing.campaignResponse.length - 1 ? 12 : 0 }}>
+                      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--as-mute)', textAlign: 'right', paddingTop: 2 }}>{c.d}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, marginTop: 4 }} />
+                        {i < e.marketing.campaignResponse.length - 1 && <div style={{ width: 1.5, flex: 1, background: 'var(--as-line-2)', minHeight: 24 }} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{c.action}</div>
+                      </div>
+                      {/* C2 #3:轉換筆補上成交額 */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: color + '22', color }}>
+                          {c.status === 'win' ? '✓ 轉換' : c.status === 'ok' ? '互動' : '未回應'}
+                        </span>
+                        {c.rev > 0 && (
+                          <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--as-success)' }}>NT${c.rev.toLocaleString()}</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* M4 下次活動建議 */}
+            <div className="card" style={{ background: 'linear-gradient(135deg, var(--as-cdefg-tint), #fff)', border: '1px solid var(--as-cdefg)' }}>
+              <div className="ch">
+                <div><h3 style={{ color: 'var(--as-cdefg)' }}><Icon name="sparkles" size={14} /> AI 建議 · 觸及與商機(下一檔活動)</h3><div className="csub">{e.marketing.nextCampaignSuggestion.reason}</div></div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--as-ink)', marginBottom: 4 }}>{e.marketing.nextCampaignSuggestion.name}</div>
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    <div><span style={{ fontSize: 11, color: 'var(--as-mute)' }}>預估開信 </span><b className="mono" style={{ color: 'var(--as-cdefg)' }}>{e.marketing.nextCampaignSuggestion.expectedOpen}%</b></div>
+                    <div><span style={{ fontSize: 11, color: 'var(--as-mute)' }}>預估轉換 </span><b className="mono" style={{ color: 'var(--as-success)' }}>{e.marketing.nextCampaignSuggestion.expectedConvert}%</b></div>
+                    {/* C2 #5:AI 推薦活動補預估貢獻金額(對齊主管視圖 AirCare +6,800/季) */}
+                    <div><span style={{ fontSize: 11, color: 'var(--as-mute)' }}>預估貢獻 </span><b className="mono" style={{ color: 'var(--as-success)' }}>NT${e.marketing.nextCampaignSuggestion.expectedRevenue.toLocaleString()} {e.marketing.nextCampaignSuggestion.expectedRevenueUnit}</b></div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>最近消費</span>
-                    <span className="mono">{w.recentActivity.lastPurchase}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>消費類型</span>
-                    <span>{w.recentActivity.lastType}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0' }}>
-                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>處理顧問</span>
-                    <span>{w.recentActivity.lastAgent}</span>
-                  </div>
+                </div>
+                <button className="btn primary cdefg">排入推送 →</button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ═══ 客服視圖 (§2 聯絡 / 歷程 / 待辦) ═══ */}
+        {subTab === '聯絡與歷程' && (
+          <>
+            {/* C1 動線:聯絡資訊 → 待辦/提醒(上移) → Memo+時間軸 → 最近互動+服務歷程(下移) */}
+            {/* (跨模組信號已搬到獨立 sub-tab,此處不再重複) */}
+
+            {/* ① 聯絡資訊(常駐第一,撥號入口) */}
+            <div className="card">
+              <div className="ch"><div><h3>聯絡資訊</h3><div className="csub">缺項以黃底標示 · 點「補資料」立即補建</div></div></div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>手機</span>
+                  <span className="mono">{w.contact.phone}</span>
+                  <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }}><Icon name="phone" size={11} /> 撥打</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>Email</span>
+                  <span style={{ background: 'var(--as-warning-tint)', padding: '2px 8px', borderRadius: 4, color: '#713F12', fontSize: 12, fontWeight: 600, justifySelf: 'start' }}>待補</span>
+                  <button className="btn primary cdefg" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setShowMissingDataModal(true)}>+ 補資料</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>Line ID</span>
+                  <span style={{ background: 'var(--as-warning-tint)', padding: '2px 8px', borderRadius: 4, color: '#713F12', fontSize: 12, fontWeight: 600, justifySelf: 'start' }}>待補</span>
+                  <button className="btn primary cdefg" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setShowMissingDataModal(true)}>+ 補資料</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
+                  <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>可聯繫時間</span>
+                  <span>{w.contact.timePref}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0' }}>
+                  <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>聯繫偏好</span>
+                  <span>{w.contact.channelPref}</span>
                 </div>
               </div>
             </div>
 
-            {/* D3 服務歷程摘要 */}
-            <div className="card">
-              <div className="ch"><div><h3>服務歷程摘要</h3><div className="csub">派工 / 定保 / 維修筆數 + 結案狀態</div></div></div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                {w.serviceSummary.map(s => (
-                  <div key={s.type} style={{ padding: '12px 14px', background: 'var(--as-bg)', borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--as-mute)', marginBottom: 4 }}>{s.type}</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--f-mono)', marginBottom: 6 }}>{s.total}</div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <span className="pill g" style={{ fontSize: 10 }}>已結 {s.closed}</span>
-                      {s.open > 0 && <span className="pill r" style={{ fontSize: 10 }}>未結 {s.open}</span>}
+            {/* ② 待辦/提醒(C1:大幅上移,撥號前作戰卡 — 這次該解什麼) */}
+            <div className="card" style={{ borderLeft: '3px solid var(--as-danger)' }}>
+              <div className="ch">
+                <div><h3>📞 撥號前 · 這次該解什麼</h3><div className="csub">下次定保倒數 / 濾網提醒 / 待補資料</div></div>
+                <span className="pill r">{w.todos.filter(t => t.pri === 'r').length} 急</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {w.todos.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: '1px solid var(--as-line)', borderLeft: `3px solid ${t.pri === 'r' ? 'var(--as-danger)' : 'var(--as-warning)'}`, borderRadius: 6 }}>
+                    <span className={`pill ${t.pri}`} style={{ fontSize: 10, flexShrink: 0 }}>{t.pri === 'r' ? '急' : '一般'}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{t.sub}</div>
                     </div>
+                    <button className="btn" style={{ fontSize: 11 }}>處理</button>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* D4 Memo 重點濃縮 + 互動筆記時間軸 */}
+            {/* ③ Memo 重點濃縮 + 互動筆記時間軸(C1:電話前必看上移到時間軸前面) */}
             <div className="card">
-              <div className="ch"><div><h3>Memo 重點濃縮</h3><div className="csub">體質與習慣 / 歷史處理 — 電話前先看這塊</div></div></div>
+              <div className="ch"><div><h3>💡 電話前必看 · Memo 重點</h3><div className="csub">體質與習慣 / 歷史處理</div></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 6 }}>📌 體質與習慣</div>
@@ -1366,51 +1507,51 @@ function PersonaView() {
               </div>
             </div>
 
-            {/* D5 待辦/提醒 */}
-            <div className="card">
-              <div className="ch">
-                <div><h3>待辦 / 提醒</h3><div className="csub">下次定保倒數 / 濾網提醒 / 待補資料</div></div>
-                <span className="pill r">{w.todos.filter(t => t.pri === 'r').length} 急</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {w.todos.map((t, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: '1px solid var(--as-line)', borderLeft: `3px solid ${t.pri === 'r' ? 'var(--as-danger)' : 'var(--as-warning)'}`, borderRadius: 6 }}>
-                    <span className={`pill ${t.pri}`} style={{ fontSize: 10, flexShrink: 0 }}>{t.pri === 'r' ? '急' : '一般'}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
-                      <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{t.sub}</div>
-                    </div>
-                    <button className="btn" style={{ fontSize: 11 }}>處理</button>
+            {/* ④ 最近互動 + 服務歷程摘要(C1:檔案資訊下移,2 欄並排省版面) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div className="card">
+                <div className="ch"><div><h3>最近互動</h3><div className="csub">最新一次接觸資訊</div></div></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
+                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>最近派工</span>
+                    <span className="mono">{w.recentActivity.lastDispatch}</span>
                   </div>
-                ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
+                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>最近消費</span>
+                    <span className="mono">{w.recentActivity.lastPurchase}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)' }}>
+                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>消費類型</span>
+                    <span>{w.recentActivity.lastType}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, padding: '6px 0' }}>
+                    <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>處理顧問</span>
+                    <span>{w.recentActivity.lastAgent}</span>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* H1 保留:跨模組信號 */}
-            <div className="card">
-              <div className="ch">
-                <div><h3>跨模組信號</h3><div className="csub">即時關聯資訊 · 可跳轉對應模組</div></div>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {CROSS_SIGNALS.map(sig => (
-                  <div key={sig.mod} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid var(--as-line)', borderRadius: 8, flex: '1 1 auto', minWidth: 180, cursor: 'pointer' }}>
-                    <div style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--as-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
-                      {sig.mod}
+              <div className="card">
+                <div className="ch"><div><h3>服務歷程摘要</h3><div className="csub">派工 / 定保 / 維修筆數 + 結案狀態</div></div></div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  {w.serviceSummary.map(s => (
+                    <div key={s.type} style={{ padding: '10px 12px', background: 'var(--as-bg)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 4 }}>{s.type}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--f-mono)', marginBottom: 6 }}>{s.total}</div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <span className="pill g" style={{ fontSize: 9 }}>已結 {s.closed}</span>
+                        {s.open > 0 && <span className="pill r" style={{ fontSize: 9 }}>未結 {s.open}</span>}
+                      </div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>{sig.label}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600 }}>{sig.signal}</div>
-                    </div>
-                    <span className={`pill ${sig.cls}`} style={{ fontSize: 10, marginLeft: 'auto' }}>→</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </>
         )}
 
         {/* ═══ 顧問視圖 (§3 到府前準備) ═══ */}
-        {subTab === '顧問視圖' && (
+        {subTab === '設備與到府' && (
           <>
             {/* E1 設備清單卡(克立淨真實機型 + 濾網規格) */}
             <div className="card">
@@ -1456,6 +1597,31 @@ function PersonaView() {
               </div>
             </div>
 
+            {/* C1 動線:設備清單 → 本次預判(上移) → 耗材盤點 · 殘量→症狀→預判一氣呵成 */}
+
+            {/* E3 歷次服務症狀 + 本次預判(C1:上移到設備清單之後,先看預判再備料) */}
+            <div className="card" style={{ borderLeft: '3px solid var(--as-primary)' }}>
+              <div className="ch">
+                <div><h3>🔬 本次到府預判 + 歷次症狀</h3><div className="csub">殘量 → 症狀 → 預判一氣呵成,備料前先看</div></div>
+              </div>
+              <div style={{ padding: '12px 14px', background: 'var(--as-ab-tint)', borderLeft: '3px solid var(--as-primary)', borderRadius: 6, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 4 }}>📋 本次預判(對齊 AI 帶料單)</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-ab-ink)' }}>{w.nextVisitPrediction}</div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 6 }}>過往已知症狀(重複次數)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {w.symptoms.map((s, i) => (
+                  <div key={i} style={{ padding: '12px 14px', border: '1px solid var(--as-line)', borderLeft: '3px solid var(--as-h)', borderRadius: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--as-h)' }}>{s.tag}</span>
+                      <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>×{s.count} 次</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--as-ink-2)', lineHeight: 1.5 }}>{s.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* E2 耗材盤點(全 0 → 黃底待補) */}
             <div className="card">
               <div className="ch">
@@ -1492,28 +1658,6 @@ function PersonaView() {
               </div>
             </div>
 
-            {/* E3 歷次服務症狀預判 */}
-            <div className="card">
-              <div className="ch">
-                <div><h3>歷次服務症狀 + 本次預判</h3><div className="csub">已知症狀重複次數 / 顧問判讀</div></div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
-                {w.symptoms.map((s, i) => (
-                  <div key={i} style={{ padding: '12px 14px', border: '1px solid var(--as-line)', borderLeft: '3px solid var(--as-h)', borderRadius: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--as-h)' }}>{s.tag}</span>
-                      <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>×{s.count} 次</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--as-ink-2)', lineHeight: 1.5 }}>{s.desc}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ padding: '12px 14px', background: 'var(--as-ab-tint)', borderLeft: '3px solid var(--as-primary)', borderRadius: 6 }}>
-                <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 4 }}>📋 本次預判</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-ab-ink)' }}>{w.nextVisitPrediction}</div>
-              </div>
-            </div>
-
             {/* E4 客戶溝通眉角 + E5 金流備註(2 欄) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
               <div className="card">
@@ -1534,6 +1678,66 @@ function PersonaView() {
                   <div style={{ fontSize: 14, fontWeight: 700 }}>{w.payment.pref}</div>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--as-mute)', lineHeight: 1.5 }}>💡 {w.payment.note}</div>
+              </div>
+            </div>
+
+            {/* E-Churn 流失預測 + What-If (從 Module E 整合過來:會員經營角度) */}
+            <div className="card">
+              <div className="ch">
+                <div><h3 style={{ color: 'var(--as-warning)' }}>⚠ 流失預測 + What-If</h3><div className="csub">機率 + 主因 + 預估挽回價值 + 3 情境</div></div>
+                <span className="pill y">信心 {e.churnPrediction.confidence}%</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 20, alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 48, fontWeight: 800, fontFamily: 'var(--f-mono)', color: 'var(--as-warning)', lineHeight: 1 }}>{e.churnPrediction.probability}%</div>
+                  <div style={{ fontSize: 12, color: 'var(--as-mute)', marginTop: 4 }}>流失機率</div>
+                  <div style={{ fontSize: 11, color: 'var(--as-warning)', fontWeight: 700, marginTop: 4 }}>{e.churnPrediction.tierLabel} ({e.churnPrediction.pctRange})</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 8 }}>主因(依貢獻權重排序)</div>
+                  {e.churnPrediction.primaryReasons.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      <div style={{ flex: 1, fontSize: 12 }}>{r.factor}</div>
+                      <div style={{ width: 100, height: 5, background: 'var(--as-line-2)', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${r.weight * 100}%`, height: '100%', background: 'var(--as-warning)' }} />
+                      </div>
+                      <div className="mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--as-warning)', minWidth: 36, textAlign: 'right' }}>{(r.weight * 100).toFixed(0)}%</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--as-success-tint)', border: '1px solid #BBF7D0', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>預估挽回價值 </span>
+                  <b className="mono" style={{ fontSize: 18, color: 'var(--as-success)' }}>NT$ {e.churnPrediction.estimatedRecoverValue.toLocaleString()}</b>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--as-ink-2)' }}>建議行動:<b>{e.churnPrediction.suggestedAction}</b></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {e.churnPrediction.whatIf.map((s, i) => (
+                  <div key={i} style={{
+                    padding: '12px 14px', borderRadius: 8,
+                    border: `1.5px solid ${s.cls === 'win' ? 'var(--as-success)' : s.cls === 'warn' ? 'var(--as-danger)' : 'var(--as-line)'}`,
+                    background: s.cls === 'win' ? '#F0FDF4' : s.cls === 'warn' ? '#FFF5F5' : '#fff',
+                  }}>
+                    <div style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: s.cls === 'win' ? 'var(--as-success)' : s.cls === 'warn' ? 'var(--as-danger)' : 'var(--as-line-2)', color: s.cls ? '#fff' : 'var(--as-ink)', display: 'inline-block', fontWeight: 600, marginBottom: 6 }}>{s.lbl}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{s.nm}</div>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <div>
+                        <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: s.cls === 'win' ? 'var(--as-success)' : s.cls === 'warn' ? 'var(--as-danger)' : 'var(--as-ink)' }}>{s.pred}</div>
+                        <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>預估挽回</div>
+                      </div>
+                      <div>
+                        <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: s.cls === 'win' ? 'var(--as-success)' : s.cls === 'warn' ? 'var(--as-danger)' : 'var(--as-ink)' }}>{s.delta}</div>
+                        <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>流失變化</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--as-line-2)', display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                      <span style={{ color: 'var(--as-mute)' }}>信心 {s.conf}</span>
+                      <span style={{ color: s.cls === 'win' ? 'var(--as-success)' : s.cls === 'warn' ? 'var(--as-danger)' : 'var(--as-cdefg)', fontWeight: 600, cursor: 'pointer' }}>{s.go}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </>
@@ -1674,8 +1878,8 @@ function PersonaView() {
           </>
         )}
 
-        {/* ═══ 訂閱與帳務(保留 + 加上送修明細) ═══ */}
-        {subTab === '訂閱與帳務' && (
+        {/* ═══ 訂閱、積點與帳務(原訂閱與帳務 + 整合 Module E 積點區塊) ═══ */}
+        {subTab === '訂閱、積點與帳務' && (
           <>
             <div className="card">
               <div className="ch">
@@ -1754,43 +1958,208 @@ function PersonaView() {
                 </table>
               </div>
             </div>
+
+            {/* 訂閱方案大卡 (從 Module E 整合過來) */}
+            <div className="card">
+              <div className="ch">
+                <div><h3>訂閱方案</h3><div className="csub">{e.subscription.plan}</div></div>
+                <span className="pill g">續約倒數 {e.subscription.daysToRenewal} 天</span>
+              </div>
+              <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                <div className="kpi purple">
+                  <div className="lbl">年方案價值</div>
+                  <div className="val">NT${(e.subscription.annualValue / 1000).toFixed(1)}<span className="u">K</span></div>
+                  <div className="ft"><span className="delta">月均 NT${e.subscription.monthlyValue.toLocaleString()}</span></div>
+                </div>
+                <div className="kpi green">
+                  <div className="lbl">自動續約</div>
+                  <div className="val" style={{ fontSize: 20 }}>{e.subscription.autoRenew ? '已開啟' : '未開啟'}</div>
+                  <div className="ft"><span className="delta">{e.subscription.paymentMethod}</span></div>
+                </div>
+                <div className="kpi orange">
+                  <div className="lbl">續約次數</div>
+                  <div className="val">{e.subscription.renewedCount}<span className="u">次</span></div>
+                  <div className="ft"><span className="delta">建立 {e.subscription.startDate}</span></div>
+                </div>
+                <div className="kpi red">
+                  <div className="lbl">下次續約</div>
+                  <div className="val" style={{ fontSize: 18 }}>{e.subscription.nextRenewal}</div>
+                  <div className="ft"><span className="delta">剩 {e.subscription.daysToRenewal} 天</span></div>
+                </div>
+              </div>
+            </div>
+
+            {/* 積點帳戶 + 進度條 (從 Module E 整合過來) */}
+            <div className="card">
+              <div className="ch">
+                <div><h3>積點帳戶</h3><div className="csub">{e.points.tier} · 累積 {e.points.balance.toLocaleString()} 點</div></div>
+                <span style={{ padding: '4px 10px', borderRadius: 12, background: e.points.tierColor, color: '#fff', fontSize: 12, fontWeight: 700 }}>{e.points.tier}</span>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span>距 <b>{e.points.nextTier}</b> 還差 {e.points.pointsToNextTier.toLocaleString()} 點</span>
+                  <span className="mono">{e.points.balance.toLocaleString()} / {e.points.nextTierAt.toLocaleString()}</span>
+                </div>
+                <div style={{ height: 8, background: 'var(--as-line-2)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ width: `${(e.points.balance / e.points.nextTierAt) * 100}%`, height: '100%', background: `linear-gradient(90deg, ${e.points.tierColor}, #A855F7)` }} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
+                <div style={{ padding: '10px 12px', background: 'var(--as-bg)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>本月發放</div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--as-success)' }}>+{e.points.monthlyEarned.toLocaleString()}</div>
+                </div>
+                <div style={{ padding: '10px 12px', background: 'var(--as-bg)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>本月兌換</div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--as-cdefg)' }}>−{e.points.monthlyRedeemed.toLocaleString()}</div>
+                </div>
+                <div style={{ padding: '10px 12px', background: 'var(--as-bg)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>兌換率</div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{e.points.redemptionRate}%</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 6 }}>近期累積記錄</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {e.points.recentEarn.map((r, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < e.points.recentEarn.length - 1 ? '1px solid var(--as-line-2)' : 'none' }}>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{r.src}</div>
+                          <div className="mono" style={{ fontSize: 10, color: 'var(--as-mute)' }}>{r.d}</div>
+                        </div>
+                        <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--as-success)' }}>+{r.pts.toLocaleString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 6 }}>建議兌換</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {e.points.redeemableItems.map((r, i) => {
+                      const can = e.points.balance >= r.pts
+                      return (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', border: '1px solid var(--as-line)', borderRadius: 6, opacity: can ? 1 : 0.55 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{r.name}</div>
+                            <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>{r.fit}</div>
+                          </div>
+                          <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: can ? 'var(--as-cdefg)' : 'var(--as-mute)' }}>{r.pts.toLocaleString()}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ═══ 跨模組信號 (從 Module E 整合過來:王敬梅在 6 個模組的足跡) ═══ */}
+        {subTab === '跨模組信號' && (
+          <>
+            <div className="card">
+              <div className="ch">
+                <div><h3>跨模組信號</h3><div className="csub">這位用戶在 6 個模組的足跡 · 點任一卡跳對應模組</div></div>
+                <span className="pill b">{e.crossSignals.length} 個訊號</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                {e.crossSignals.map(sig => {
+                  const color = sig.cls === 'g' ? 'var(--as-success)' : sig.cls === 'y' ? 'var(--as-warning)' : 'var(--as-cdefg)'
+                  return (
+                    <div
+                      key={sig.mod}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                        border: '1px solid var(--as-line)', borderLeft: `3px solid ${color}`, borderRadius: 8, cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                        {sig.mod}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>Module {sig.mod} · {sig.label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{sig.signal}</div>
+                      </div>
+                      <span className={`pill ${sig.cls}`} style={{ fontSize: 11 }}>→</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 會員經營角度的待辦 (從 Module E 整合過來) */}
+            <div className="card">
+              <div className="ch">
+                <div><h3>會員經營角度的待辦</h3><div className="csub">行銷 + 客服角度 · {e.memberTodos.filter(t => t.pri === 'r').length} 急</div></div>
+                <span className="pill r">{e.memberTodos.filter(t => t.pri === 'r').length} 急</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {e.memberTodos.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: '1px solid var(--as-line)', borderLeft: `3px solid ${t.pri === 'r' ? 'var(--as-danger)' : 'var(--as-warning)'}`, borderRadius: 6 }}>
+                    <span className={`pill ${t.pri}`} style={{ fontSize: 10, flexShrink: 0 }}>{t.pri === 'r' ? '急' : '一般'}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{t.sub}</div>
+                    </div>
+                    <button className="btn" style={{ fontSize: 11 }}>處理</button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
         </div>
 
-        {/* ═══ G1 浮動 AI 側欄(隨 tab 切換內容) ═══ */}
-        <div className="card" style={{ height: 'fit-content', position: 'sticky', top: 16 }}>
-          <div style={{ margin: '-16px -16px 16px', padding: '12px 16px', background: subTab === '主管視圖' ? 'linear-gradient(135deg, #DC2626, #F97316)' : subTab === '客服視圖' ? 'linear-gradient(135deg, #4F46E5, #6366F1)' : subTab === '顧問視圖' ? 'linear-gradient(135deg, #0E7A66, #16A085)' : subTab === '居家與畫像' ? 'linear-gradient(135deg, #D97706, #F59E0B)' : 'linear-gradient(135deg, #4F46E5, #7C3AED)', borderRadius: '8px 8px 0 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* ═══ G1 浮動 AI 側欄(隨 tab 切換內容 · B4 sticky + max-height) ═══ */}
+        <div className="card" style={{ height: 'fit-content', position: 'sticky', top: 16, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
+          <div style={{ margin: '-16px -16px 16px', padding: '12px 16px', background:
+              subTab === '價值與風險'         ? 'linear-gradient(135deg, #DC2626, #F97316)' :
+              subTab === '觸及與商機'         ? 'linear-gradient(135deg, #4F46E5, #A855F7)' :
+              subTab === '聯絡與歷程'         ? 'linear-gradient(135deg, #4F46E5, #6366F1)' :
+              subTab === '設備與到府'         ? 'linear-gradient(135deg, #0E7A66, #16A085)' :
+              subTab === '居家與畫像'         ? 'linear-gradient(135deg, #D97706, #F59E0B)' :
+              subTab === '跨模組信號'         ? 'linear-gradient(135deg, #2563EB, #4F46E5)' :
+                                                'linear-gradient(135deg, #4F46E5, #7C3AED)',
+            borderRadius: '8px 8px 0 0', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icon name="sparkles" size={16} />
             <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>
-              AI 建議 · {subTab === '主管視圖' ? '主管' : subTab === '客服視圖' ? '客服' : subTab === '顧問視圖' ? '顧問' : subTab === '居家與畫像' ? '畫像' : '帳務'}視角
+              AI 建議 · {subTab}
             </span>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'rgba(255,255,255,0.85)' }}>3 項建議</span>
           </div>
 
           {/* 各 tab 對應 AI 建議 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {(subTab === '主管視圖' ? [
+            {(subTab === '價值與風險' ? [
               { pri: '高', priCls: 'r', title: '訂閱化耗材配送', desc: '4 機型耗材合計年消費 NT$24K · 散買轉訂閱可鎖 LTV', action: '推送訂閱方案' },
               { pri: '高', priCls: 'r', title: '補上 Email / Line', desc: '行銷觸及率 < 60% · 補齊後可大幅提升再行銷效果', action: '安排補資料任務' },
               { pri: '中', priCls: 'y', title: 'AirCare 季報試水', desc: '高敏家庭適配 95% · 客戶曾主動詢問', action: '加入推送清單' },
-            ] : subTab === '客服視圖' ? [
+            ] : subTab === '觸及與商機' ? [
+              { pri: '高', priCls: 'r', title: `推送「${e.marketing.nextCampaignSuggestion.name}」`, desc: `命中 3 群,預估開信 ${e.marketing.nextCampaignSuggestion.expectedOpen}% · 轉換 ${e.marketing.nextCampaignSuggestion.expectedConvert}%`, action: '排入推送' },
+              { pri: '高', priCls: 'r', title: '補建 LINE / Email', desc: '影響觸及 −40% · 致電時順便邀請加 LINE', action: '指派任務' },
+              { pri: '中', priCls: 'y', title: '邀請成為品牌大使', desc: `已有 ${e.marketing.referralCount} 位推薦 · NPS ${e.marketing.npsScore} · 潛力高`, action: '推送大使計畫' },
+            ] : subTab === '聯絡與歷程' ? [
               { pri: '高', priCls: 'r', title: '下一通電話這樣開場', desc: '直接提小孩房 A81 殘量 14% 急需更換 · 順帶問春季過敏狀況', action: '看 Memo 後撥打' },
               { pri: '高', priCls: 'r', title: '順帶補資料', desc: 'Email / Line ID / 職業 / 居住成員 · 4 欄一次補齊', action: '開啟資料清單' },
               { pri: '中', priCls: 'y', title: '2027/05 提前回訪', desc: '建議定保日前 60 天進入回訪流程', action: '加入提醒' },
-            ] : subTab === '顧問視圖' ? [
+            ] : subTab === '設備與到府' ? [
               { pri: '高', priCls: 'r', title: '到府前帶料', desc: '前置 ×4 + ECF ×5 + HEPA H13 ×4 (含預備量)', action: '產出領料單' },
-              { pri: '高', priCls: 'r', title: '預判處理項目', desc: '客廳 A71 主板巡檢 + 全機深度清潔(電漿積碳)', action: '列入工單' },
+              { pri: '高', priCls: 'r', title: '採納 What-If AI 推薦', desc: `預估挽回 NT$${e.churnPrediction.estimatedRecoverValue.toLocaleString()} · 信心 ${e.churnPrediction.confidence}%`, action: '立即執行' },
               { pri: '中', priCls: 'y', title: '溝通備忘', desc: '先報全價再 −8% · 主推空品訴求(小孩房優先)', action: '加入備忘錄' },
             ] : subTab === '居家與畫像' ? [
               { pri: '高', priCls: 'r', title: '春霾季加強建議', desc: '基隆河沿岸 + 重劃區揚塵 · 4–5 月為高發期', action: '推送濾網升級' },
               { pri: '中', priCls: 'y', title: '寵物毛屑配置', desc: 'F501 書房可換到貓主要活動區', action: '安排巡檢調整' },
               { pri: '中', priCls: 'y', title: '烹飪時段運轉', desc: '主臥 A51 烹飪時應靜置 · 改為書房 F501 強運轉', action: '推送使用建議' },
+            ] : subTab === '跨模組信號' ? [
+              { pri: '高', priCls: 'r', title: '推送春季健康證書', desc: 'Module G · 高敏家庭建議推送 · 春季尚未發送', action: '推送證書' },
+              { pri: '高', priCls: 'r', title: '結 A81 待結派工', desc: 'Module C · 2026-04-22 後續未結 · 影響閉環', action: '結案' },
+              { pri: '中', priCls: 'y', title: '更新 Module H 推薦', desc: '推薦行動:訂閱升級 + 補 LINE · 預估 ROI 4.8×', action: '檢視 H 模組' },
             ] : [
+              { pri: '高', priCls: 'r', title: '推「AirCare 季度報告」', desc: '8,000 點 · 高敏家庭適配 · 距 Platinum 還差 4,000 點', action: '兌換' },
               { pri: '高', priCls: 'r', title: '訂閱制升級試算', desc: '4 機型耗材年訂閱 · 公式試算年省 NT$3,200', action: '模擬報價' },
               { pri: '中', priCls: 'y', title: '自動扣款優惠', desc: '線下刷卡可考慮信用卡綁定 + 5% off', action: 'E-Mail 推送' },
-              { pri: '低', priCls: 'g', title: '送修閉環升級', desc: '上次優惠 −8% · 可建議 LTV 加值方案', action: '加入後續' },
             ]).map((rec, i) => (
               <div key={i} style={{ padding: '12px 14px', border: '1px solid var(--as-line)', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: rec.priCls === 'r' ? 'var(--as-danger)' : rec.priCls === 'y' ? 'var(--as-warning)' : 'var(--as-success)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -1803,10 +2172,77 @@ function PersonaView() {
             ))}
           </div>
           <div style={{ marginTop: 16, padding: '10px 12px', background: 'rgba(14,122,102,0.06)', borderRadius: 8, fontSize: 11, color: 'var(--as-mute)', lineHeight: 1.5 }}>
-            AI 建議依「當前角色視圖 + IoT 數據 + 服務記錄 + 消費行為」綜合判讀 · 每日更新
+            AI 建議依「當前檢視面向 + IoT 數據 + 服務記錄 + 消費行為」綜合判讀 · 每日更新
           </div>
         </div>
       </div>
+
+      {/* D:共用「補資料」任務 modal — 主管/行銷/客服 任一處點擊都進這同一流程 */}
+      {showMissingDataModal && (
+        <div
+          onClick={() => setShowMissingDataModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'rgba(15, 23, 42, 0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={ev => ev.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 12, padding: 24,
+              width: '100%', maxWidth: 640,
+              maxHeight: 'calc(100vh - 40px)', overflowY: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                  <Icon name="sparkles" size={16} /> 補資料任務 — {w.identity.name}
+                </h3>
+                <div style={{ fontSize: 12, color: 'var(--as-mute)', marginTop: 4 }}>
+                  共 {w.dataGaps.length} 欄需補齊 · 完整度 {w.identity.completeness}% → 預估補齊後 100% · 影響行銷觸及率 / 客服接觸效率 / 主管分群精準度
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMissingDataModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--as-mute)', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+              >×</button>
+            </div>
+
+            {/* 共用提示 — 解釋 3 視圖入口都通同一處 */}
+            <div style={{ padding: '10px 12px', background: 'var(--as-cdefg-tint)', border: '1px solid var(--as-cdefg)', borderLeft: '3px solid var(--as-cdefg)', borderRadius: 6, fontSize: 12, color: 'var(--as-cdefg-ink)', marginBottom: 16 }}>
+              💡 主管視角(資料缺口 62%)、行銷視角(LINE 未連 −40%)、客服視角(Email/Line 待補)都是同一件事 — 在這裡一次補齊即可
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {w.dataGaps.map((g, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 12, alignItems: 'center', padding: '10px 12px', border: '1px solid var(--as-line)', borderRadius: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{g.field}</div>
+                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>{g.impact}</div>
+                  </div>
+                  <input
+                    className="search"
+                    style={{ width: '100%' }}
+                    placeholder={`輸入 ${g.field}...`}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--as-line-2)' }}>
+              <button className="btn" onClick={() => setShowMissingDataModal(false)} style={{ flex: 1 }}>取消</button>
+              <button className="btn" style={{ flex: 1 }}>稍後處理</button>
+              <button className="btn primary cdefg" style={{ flex: 2 }} onClick={() => setShowMissingDataModal(false)}>
+                <Icon name="sparkles" size={12} /> 儲存並更新分群
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -1814,6 +2250,14 @@ function PersonaView() {
 // ── Main component ─────────────────────────────────────────────────────────────
 export function ModuleB() {
   const [tab, setTab] = useState('individual')
+
+  // 跨模組跳轉:Module E 各 row 點擊 → navigate('/module-b', { state: { gotoIndividual: true, memberId } })
+  // 接收後自動切到「個人 360° 視圖」tab(會員 360° 已整合進此處)
+  const location = useLocation()
+  useEffect(() => {
+    const st = location.state as { gotoIndividual?: boolean } | null
+    if (st?.gotoIndividual) setTab('individual')
+  }, [location.state])
 
   return (
     <PageShell
@@ -1830,7 +2274,7 @@ export function ModuleB() {
       tabs={[
         { k: 'overall',    l: '整體層' },
         { k: 'segment',    l: '分群層' },
-        { k: 'individual', l: '個人層' },
+        { k: 'individual', l: '個人 360° 視圖' },
       ]}
       activeTab={tab}
       onTab={setTab}
