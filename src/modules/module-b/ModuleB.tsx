@@ -5,7 +5,6 @@ import { Sparkline } from '../../components/charts/Sparkline'
 import {
   FINANCE_RECORDS,
   B_OVERVIEW_JUMP_CARDS,
-  SEGMENTS_B,
   B_LIFECYCLE,
   B_NEW_JOIN,
   B_CHURN,
@@ -28,58 +27,175 @@ const CROSS_SIGNALS = [
   { mod: 'G', label: '健康證書', signal: '近季尚未發送 · 建議推送', cls: 'y' },
 ]
 
-// ── Segment customer cards ─────────────────────────────────────────────────────
-interface SegCustomer {
-  nm: string
-  id: string
-  tier: string
-  metric: string
-  signal: string
-  sigCls: string
-  av: string
-}
+// ── 分群層 v2 mock data ────────────────────────────────────────────────────────
+const SEG_MODES = [
+  { k: 'matrix',    l: '價值象限',   d: 'LTV × 活躍度 2×2',     ic: '◧' },
+  { k: 'lifecycle', l: '生命週期',   d: '6 階段 funnel',         ic: '↻' },
+  { k: 'priority',  l: '行動優先級', d: 'P0–P3 客服待辦',        ic: '!' },
+  { k: 'context',   l: '使用情境',   d: '家庭組成 × 健康訴求',   ic: '◉' },
+  { k: 'device',    l: '設備結構',   d: '單機 / 多機 / 多場域',  ic: '▤' },
+  { k: 'tags',      l: '客戶標籤',   d: 'memo 語意分析產出',     ic: '#' },
+] as const
 
-const SEG_CUSTOMERS: Record<string, SegCustomer[]> = {
-  '新購': [
-    { nm: '林雅婷', id: 'M-009812', tier: '標準', metric: 'LTV NT$28K', signal: '首購 14 天', sigCls: 'b', av: '林' },
-    { nm: '張宗翰', id: 'M-009801', tier: '標準', metric: 'LTV NT$32K', signal: '設備配對完成', sigCls: 'g', av: '張' },
-    { nm: '許佳伶', id: 'M-009788', tier: '標準', metric: 'LTV NT$25K', signal: '待 App 教學', sigCls: 'y', av: '許' },
-    { nm: '吳俊傑', id: 'M-009774', tier: '標準', metric: 'LTV NT$41K', signal: '已預約到府安裝', sigCls: 'b', av: '吳' },
-    { nm: '蔡明珠', id: 'M-009761', tier: '標準', metric: 'LTV NT$19K', signal: '等待開機激活', sigCls: 'y', av: '蔡' },
-    { nm: '劉建志', id: 'M-009750', tier: '標準', metric: 'LTV NT$36K', signal: '首月體驗期', sigCls: 'g', av: '劉' },
-  ],
-  '復購': [
-    { nm: '陳俊宏', id: 'M-008412', tier: '高級', metric: 'LTV NT$370K+', signal: '7 台裝置', sigCls: 'g', av: '陳' },
-    { nm: '王淑芬', id: 'M-007821', tier: '高級', metric: 'LTV NT$220K', signal: '3 年客戶', sigCls: 'b', av: '王' },
-    { nm: '李建民', id: 'M-007433', tier: '標準', metric: 'LTV NT$95K', signal: '年方案續約', sigCls: 'g', av: '李' },
-    { nm: '黃雅琳', id: 'M-007288', tier: '高級', metric: 'LTV NT$180K', signal: '加購濾網', sigCls: 'y', av: '黃' },
-    { nm: '鄭文哲', id: 'M-007102', tier: '標準', metric: 'LTV NT$78K', signal: '二度擴機', sigCls: 'b', av: '鄭' },
-    { nm: '謝淑娟', id: 'M-006988', tier: '高級', metric: 'LTV NT$290K', signal: 'P90 高價值', sigCls: 'p', av: '謝' },
-  ],
-  '會推薦': [
-    { nm: '林美君', id: 'M-005441', tier: '高級', metric: 'NPS 10 分', signal: '推薦 4 位', sigCls: 'g', av: '林' },
-    { nm: '陳志遠', id: 'M-004892', tier: '標準', metric: 'NPS 9 分', signal: '社群分享', sigCls: 'g', av: '陳' },
-    { nm: '蔡雅雯', id: 'M-004321', tier: '高級', metric: 'NPS 10 分', signal: '推薦 2 位', sigCls: 'b', av: '蔡' },
-    { nm: '黃建平', id: 'M-003988', tier: '標準', metric: 'NPS 9 分', signal: '部落格評測', sigCls: 'p', av: '黃' },
-    { nm: '吳麗華', id: 'M-003641', tier: '高級', metric: 'NPS 10 分', signal: '推薦 6 位', sigCls: 'g', av: '吳' },
-    { nm: '許仁傑', id: 'M-003112', tier: '標準', metric: 'NPS 9 分', signal: 'Google 五星', sigCls: 'g', av: '許' },
-  ],
-  '潛在': [
-    { nm: '趙曉明', id: 'M-002811', tier: '潛在', metric: '詢問 3 次', signal: '報價單待回覆', sigCls: 'y', av: '趙' },
-    { nm: '孫佳琪', id: 'M-002744', tier: '潛在', metric: '看展記錄', signal: '活動報名', sigCls: 'b', av: '孫' },
-    { nm: '周文星', id: 'M-002610', tier: '潛在', metric: '試用申請', signal: '14 天試用中', sigCls: 'g', av: '周' },
-    { nm: '馮淑美', id: 'M-002488', tier: '潛在', metric: '官網瀏覽', signal: '高價值頁面停留', sigCls: 'y', av: '馮' },
-    { nm: '程建國', id: 'M-002311', tier: '潛在', metric: '社群互動', signal: '問卷填寫', sigCls: 'b', av: '程' },
-    { nm: '沈怡如', id: 'M-002188', tier: '潛在', metric: '競品比較', signal: 'AI 推薦觸及', sigCls: 'p', av: '沈' },
-  ],
-}
+type SegMode = typeof SEG_MODES[number]['k']
 
-const SEG_TYPE_META: Array<{ k: string; count: string; ltv: string; trait: string }> = [
-  { k: '新購', count: '1,284 位', ltv: 'NT$28–42K', trait: '首月體驗 · 配對完成率關鍵' },
-  { k: '復購', count: '4,218 位', ltv: 'NT$80–480K', trait: '主流收益來源 · LTV 穩定成長' },
-  { k: '會推薦', count: '2,128 位', ltv: 'NT$120K+', trait: 'NPS 9–10 · 高 K-factor 傳播力' },
-  { k: '潛在', count: '841 位', ltv: 'NT$0 → 潛力', trait: '試用中 / 詢問階段 · 轉換關鍵' },
+// 1. 價值象限 (4 quadrants)
+const VALUE_MATRIX = [
+  { id: 'rising',  lbl: '潛力新星', desc: '低 LTV × 高活躍', n: 1842, arr: 12, ltv: 'NT$ 64K',   mom: '+24', tone: 'b', action: '推升訂閱 + 加購交叉銷售' },
+  { id: 'champ',   lbl: '金主',     desc: '高 LTV × 高活躍', n: 432,  arr: 38, ltv: 'NT$ 480K+', mom: '+12', tone: 'g', action: 'VIP 顧問深耕 + 推薦獎勵' },
+  { id: 'long',    lbl: '長尾',     desc: '低 LTV × 低活躍', n: 5868, arr: 36, ltv: 'NT$ 22K',   mom: '−2',  tone: 'm', action: '自動化關懷 · 低成本維繫' },
+  { id: 'vipDoze', lbl: '沉睡 VIP', desc: '高 LTV × 低活躍', n: 186,  arr: 14, ltv: 'NT$ 320K',  mom: '−8',  tone: 'r', action: '主管親自挽回 · 流失警報' },
 ]
+
+// 2. 生命週期 6 階段
+const LIFECYCLE_STAGES = [
+  { k: '新客',       range: '0–3 個月',     n: 482,  med: 38,  hp: 78, c: '#4F46E5',          next: '完成 App 配對 + 14 天教學' },
+  { k: '培養期',     range: '3–12 個月',    n: 1842, med: 220, hp: 82, c: '#16A085',          next: '建立訂閱習慣 + 第一次續約' },
+  { k: '穩定期',     range: '1–3 年',       n: 3284, med: 540, hp: 84, c: '#0E7A66',          next: '加購 / 推薦獎勵' },
+  { k: '續約黃金期', range: '到期 < 90d',   n: 612,  med: 60,  hp: 82, c: '#D97706',          next: '主動聯繫 · ARR 關鍵 90 天' },
+  { k: '流失風險',   range: '180d 無互動',  n: 396,  med: 200, hp: 64, c: '#DC2626',          next: '客服 7 天內挽回' },
+  { k: '已沉睡',     range: '> 365 天',     n: 192,  med: 480, hp: 52, c: 'var(--as-mute-2)', next: '低成本召回 · 大型節點觸發' },
+]
+
+// 3. 行動優先級
+const PRIORITY_LANES = [
+  { lvl: 'P0', tone: 'r', t: '異常設備 + 高價值',  n: 18,  oldest: '4h',  desc: '濾網爆表 / 設備離線 · LTV > 100K' },
+  { lvl: 'P1', tone: 'y', t: '續約黃金期 + 高活躍', n: 142, oldest: '2d',  desc: '到期前 90 天 · LINE/App 重度' },
+  { lvl: 'P2', tone: 'b', t: '客訴未結',            n: 36,  oldest: '6h',  desc: '24h 內必須回覆' },
+  { lvl: 'P3', tone: 'm', t: '培養期 + 沉默',       n: 384, oldest: '12d', desc: '關懷觸發 · 自動化排程' },
+]
+
+// 4. 使用情境
+const CONTEXT_TAGS = [
+  { lbl: '過敏家庭',   n: 1842, renew: 92, c: '#DC2626',          pain: '春季鼻過敏 + PM2.5 敏感' },
+  { lbl: '寵物家庭',   n: 1284, renew: 88, c: '#D97706',          pain: '毛屑 · 異味 · 過敏交叉' },
+  { lbl: '嬰幼兒家庭', n: 982,  renew: 96, c: '#16A085',          pain: '濕度敏感 · 睡眠品質' },
+  { lbl: '銀髮照護',   n: 624,  renew: 91, c: '#4F46E5',          pain: '呼吸道 · 慢病管理' },
+  { lbl: '一般家庭',   n: 4218, renew: 78, c: 'var(--as-mute-2)', pain: '一般通用 · 季節調節' },
+]
+
+// 5. 設備結構
+const DEVICE_STRUCT = [
+  { lbl: '單機家庭',                       n: 4218, pct: 49, hp: 78, renew: 76 },
+  { lbl: '多機家庭 (2–4 台)',              n: 2842, pct: 33, hp: 84, renew: 88 },
+  { lbl: '多場域家庭 (住宅 + 辦公 / 別墅)', n: 1086, pct: 13, hp: 87, renew: 94 },
+  { lbl: '商空持有者',                      n: 462,  pct: 5,  hp: 81, renew: 92 },
+]
+
+// 6. 客戶標籤 (memo 語意分析產出)
+const CUSTOMER_TAG_GROUPS: Array<{
+  dim: string
+  color: string
+  tags: Array<{ lbl: string; n: number; c: string }>
+}> = [
+  {
+    dim: '性格屬性', color: '#4F46E5',
+    tags: [
+      { lbl: '粗暴',   n: 142,  c: 'r' },
+      { lbl: '挑剔',   n: 386,  c: 'y' },
+      { lbl: '感性',   n: 1842, c: 'b' },
+      { lbl: '理性',   n: 2628, c: 'g' },
+      { lbl: '務實',   n: 2284, c: 'g' },
+      { lbl: '友善',   n: 1346, c: 'g' },
+    ],
+  },
+  {
+    dim: '溝通偏好', color: '#16A085',
+    tags: [
+      { lbl: '簡明扼要', n: 3284, c: 'g' },
+      { lbl: '詳細說明', n: 1842, c: 'b' },
+      { lbl: '喜歡聊天', n: 1284, c: 'b' },
+      { lbl: '不愛多聊', n: 2218, c: 'y' },
+    ],
+  },
+  {
+    dim: '健康訴求 (個人)', color: '#D97706',
+    tags: [
+      { lbl: '過敏體質',    n: 1842, c: 'r' },
+      { lbl: '呼吸道病史',  n: 386,  c: 'r' },
+      { lbl: '皮膚敏感',    n: 624,  c: 'y' },
+      { lbl: '睡眠困擾',    n: 982,  c: 'b' },
+      { lbl: '無特別健康訴求', n: 4218, c: 'm' },
+    ],
+  },
+  {
+    dim: '服務配合度', color: '#0E7A66',
+    tags: [
+      { lbl: '配合度高',   n: 4218, c: 'g' },
+      { lbl: '需多次預約', n: 612,  c: 'y' },
+      { lbl: '經常拒絕',   n: 184,  c: 'r' },
+      { lbl: '即時回覆',   n: 2128, c: 'g' },
+      { lbl: '訊息已讀不回', n: 542, c: 'y' },
+    ],
+  },
+  {
+    dim: '經濟特徵', color: '#DC2626',
+    tags: [
+      { lbl: '價格敏感',   n: 1842, c: 'y' },
+      { lbl: '品牌忠誠',   n: 1284, c: 'g' },
+      { lbl: 'CP 值導向',  n: 2618, c: 'b' },
+      { lbl: '體驗導向',   n: 1846, c: 'p' },
+      { lbl: '預算寬鬆',   n: 638,  c: 'g' },
+    ],
+  },
+  {
+    dim: '推薦傾向 (NPS)', color: '#16A085',
+    tags: [
+      { lbl: '推薦者 9-10', n: 4260, c: 'g' },
+      { lbl: '中立 7-8',    n: 2536, c: 'b' },
+      { lbl: '貶損者 0-6',  n: 584,  c: 'r' },
+      { lbl: '未評分',      n: 1248, c: 'm' },
+    ],
+  },
+]
+
+// 組合分群 (跨維度疊加 saved filters)
+interface ComboItem { tags: string[]; n: number; owner: string; cls: string }
+
+const SAVED_COMBOS: ComboItem[] = [
+  { tags: ['續約黃金期', '高 LTV', 'LINE 重度'], n: 142, owner: '服務顧問', cls: 'g' },
+  { tags: ['異常設備', '嬰幼兒家庭'],            n: 18,  owner: '客服 P0',  cls: 'r' },
+  { tags: ['沉睡 VIP', '寵物家庭'],              n: 86,  owner: '行銷',     cls: 'p' },
+]
+
+// 新增組合彈窗用的標籤庫(分群維度 + 客戶標籤)
+const ALL_TAG_GROUPS: Array<{ dim: string; tags: string[] }> = [
+  { dim: '價值象限',   tags: ['金主', '沉睡 VIP', '潛力新星', '長尾'] },
+  { dim: '生命週期',   tags: ['新客', '培養期', '穩定期', '續約黃金期', '流失風險', '已沉睡'] },
+  { dim: '行動優先級', tags: ['P0 異常設備', 'P1 續約黃金', 'P2 客訴', 'P3 沉默'] },
+  { dim: '使用情境',   tags: ['過敏家庭', '寵物家庭', '嬰幼兒家庭', '銀髮照護', '一般家庭'] },
+  { dim: '設備結構',   tags: ['單機家庭', '多機家庭', '多場域家庭', '商空持有者', '異常設備'] },
+  { dim: '通道偏好',   tags: ['LINE 重度', 'App 重度', '電話偏好', '全沉默'] },
+  { dim: '訂閱狀態',   tags: ['訂閱中', '試用期', '已停訂'] },
+  { dim: 'LTV 等級',   tags: ['高 LTV', '中 LTV', '低 LTV'] },
+  // 以下為 memo 語意分析產出的客戶標籤
+  ...CUSTOMER_TAG_GROUPS.map(g => ({ dim: g.dim, tags: g.tags.map(t => t.lbl) })),
+]
+
+const COMBO_OWNERS = ['主管', '服務顧問', '客服 P0', '客服', '行銷', '產品']
+
+function ownerToCls(o: string): string {
+  if (o === '客服 P0') return 'r'
+  if (o === '行銷')     return 'p'
+  if (o === '主管')     return 'b'
+  if (o === '產品')     return 'b'
+  return 'g'
+}
+
+// mock 估算:標籤越多預估人數越少(交集邏輯)
+function estimateCount(tags: string[]): number {
+  if (tags.length === 0) return 0
+  return Math.max(8, Math.round(820 / Math.pow(tags.length, 1.45)))
+}
+
+function tonColor(t: string): string {
+  if (t === 'g') return 'var(--as-success)'
+  if (t === 'r') return 'var(--as-danger)'
+  if (t === 'y') return 'var(--as-warning)'
+  if (t === 'b') return 'var(--as-primary)'
+  if (t === 'p') return '#4F46E5'
+  return 'var(--as-mute-2)'
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 整體層 view
@@ -206,51 +322,190 @@ function OverallView() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 分群層 view
+// 分群層 view (v2 — 多維度分群觀看 demo)
 // ──────────────────────────────────────────────────────────────────────────────
 function SegmentView() {
-  const [segTab, setSegTab] = useState<'需求' | '消費力' | '依賴度' | '滿意度'>('需求')
-  const [custType, setCustType] = useState<'新購' | '復購' | '會推薦' | '潛在'>('復購')
+  const [mode, setMode] = useState<SegMode>('matrix')
+  const [combos, setCombos] = useState<ComboItem[]>(SAVED_COMBOS)
+  const [showModal, setShowModal] = useState(false)
+  const [draftTags, setDraftTags] = useState<string[]>([])
+  const [draftOwner, setDraftOwner] = useState<string>('服務顧問')
 
-  const seg = SEGMENTS_B.find(s => s.axis === segTab)!
-  const tierColor = (tier: string) =>
-    tier === '高級' ? 'var(--as-h)' : tier === '潛在' ? 'var(--as-mute-2)' : 'var(--as-primary)'
+  function openModal() {
+    setDraftTags([])
+    setDraftOwner('服務顧問')
+    setShowModal(true)
+  }
+
+  function toggleDraftTag(t: string) {
+    setDraftTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+  }
+
+  function saveCombo() {
+    if (draftTags.length < 2) return
+    const newCombo: ComboItem = {
+      tags: draftTags,
+      n: estimateCount(draftTags),
+      owner: draftOwner,
+      cls: ownerToCls(draftOwner),
+    }
+    setCombos(prev => [newCombo, ...prev])
+    setShowModal(false)
+  }
+
+  function removeCombo(i: number) {
+    setCombos(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  const draftEstimate = estimateCount(draftTags)
+  const canSave = draftTags.length >= 2
 
   return (
     <>
-      {/* 分群維度 selector */}
-      <div className="b-subtabs" style={{ marginBottom: 16 }}>
-        {(['需求', '消費力', '依賴度', '滿意度'] as const).map(k => (
-          <button key={k} className={`b-subtab${segTab === k ? ' active' : ''}`} onClick={() => setSegTab(k)}>
-            {k}分群
-          </button>
-        ))}
+      {/* Mode selector chips */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="ch">
+          <div>
+            <h3>分群觀看方式</h3>
+            <div className="csub">8,628 位活躍會員 · 切換不同視角探索</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {SEG_MODES.map(m => {
+            const active = mode === m.k
+            return (
+              <button
+                key={m.k}
+                onClick={() => setMode(m.k)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '9px 14px', borderRadius: 8,
+                  border: '1px solid ' + (active ? 'var(--as-primary)' : 'var(--as-line)'),
+                  background: active ? 'var(--as-primary)' : '#fff',
+                  color: active ? '#fff' : 'var(--as-ink)',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{m.ic}</span>
+                <span>{m.l}</span>
+                <span style={{ fontSize: 11, fontWeight: 400, opacity: active ? 0.85 : 0.6 }}>· {m.d}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {seg && (
+      {/* 1. 價值象限 */}
+      {mode === 'matrix' && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="ch">
-            <div><h3>{seg.title}</h3><div className="csub">{seg.sub}</div></div>
+            <div><h3>價值象限</h3><div className="csub">主管視角 · 決定資源該放在哪一格</div></div>
           </div>
-          {/* stacked bar */}
-          <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', gap: 2, marginBottom: 16 }}>
-            {seg.groups.map(g => (
-              <div key={g.lbl} style={{ flex: g.pct, background: g.c, opacity: 0.85 }} title={`${g.lbl} ${g.pct}%`} />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '36px 1fr 1fr',
+            gridTemplateRows: '1fr 1fr 28px',
+            gap: 8, minHeight: 380,
+          }}>
+            <div style={{ gridColumn: '1', gridRow: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--as-mute)', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+              ← 高 活躍 (90d)
+            </div>
+            <div style={{ gridColumn: '1', gridRow: '2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--as-mute)', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+              低 活躍 →
+            </div>
+
+            {VALUE_MATRIX.map((q, idx) => {
+              // idx 0=rising(topLeft), 1=champ(topRight), 2=long(bottomLeft), 3=vipDoze(bottomRight)
+              const row = idx < 2 ? 1 : 2
+              const col = idx % 2 === 0 ? 2 : 3
+              const color = tonColor(q.tone)
+              return (
+                <div key={q.id} style={{
+                  gridColumn: col, gridRow: row,
+                  border: '1px solid var(--as-line)',
+                  borderLeft: `4px solid ${color}`,
+                  borderRadius: 8, padding: 14,
+                  background: '#fff',
+                  display: 'flex', flexDirection: 'column', gap: 6,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{q.lbl}</div>
+                      <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{q.desc}</div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 4, background: color + '22', color, fontFamily: 'var(--f-mono)' }}>
+                      MoM {q.mom}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 18, marginTop: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>會員</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{q.n.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>平均 LTV</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{q.ltv}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>ARR 佔比</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{q.arr}%</div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: '#F3F4F6', fontSize: 12 }}>
+                    <span style={{ color: 'var(--as-mute)' }}>建議行動:</span> {q.action}
+                  </div>
+                </div>
+              )
+            })}
+
+            <div style={{ gridColumn: '2', gridRow: '3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--as-mute)' }}>
+              ← 低 LTV
+            </div>
+            <div style={{ gridColumn: '3', gridRow: '3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--as-mute)' }}>
+              高 LTV →
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. 生命週期 */}
+      {mode === 'lifecycle' && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ch">
+            <div><h3>生命週期階段</h3><div className="csub">客服視角 · 每階段都有明確的下一步</div></div>
+          </div>
+          <div style={{ display: 'flex', height: 14, gap: 2, marginBottom: 14, borderRadius: 7, overflow: 'hidden' }}>
+            {LIFECYCLE_STAGES.map(s => (
+              <div key={s.k} style={{ flex: s.n, background: s.c }} title={`${s.k} · ${s.n.toLocaleString()}`} />
             ))}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {seg.groups.map(g => (
-              <div key={g.lbl} style={{ display: 'grid', gridTemplateColumns: '180px 1fr auto', gap: 12, alignItems: 'center', padding: '10px 12px', border: '1px solid var(--as-line)', borderRadius: 8 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: g.c, flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{g.lbl}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--as-mute)', paddingLeft: 16, fontFamily: 'var(--f-mono)' }}>{g.n.toLocaleString()} 位 · {g.pct}%</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {LIFECYCLE_STAGES.map(s => (
+              <div key={s.k} style={{
+                border: '1px solid var(--as-line)',
+                borderTop: `3px solid ${s.c}`,
+                borderRadius: 8, padding: 12, background: '#fff',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{s.k}</div>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{s.range}</div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--as-ink-2)' }}>{g.traits}</div>
-                <div>
-                  <span className="pill b" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{g.action}</span>
+                <div style={{ display: 'flex', gap: 14, marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--f-mono)', lineHeight: 1.1 }}>{s.n.toLocaleString()}</div>
+                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>會員</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{s.med}<span style={{ fontSize: 10, color: 'var(--as-mute)' }}>d</span></div>
+                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>停留中位</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{s.hp}</div>
+                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>健康度</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, padding: '6px 8px', background: '#F3F4F6', borderRadius: 5, color: 'var(--as-ink-2)' }}>
+                  下一步:{s.next}
                 </div>
               </div>
             ))}
@@ -258,47 +513,372 @@ function SegmentView() {
         </div>
       )}
 
-      {/* 客戶類型卡片 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-        {SEG_TYPE_META.map(m => (
-          <div
-            key={m.k}
-            className="card"
-            style={{ cursor: 'pointer', borderColor: custType === m.k ? 'var(--as-primary)' : undefined, outline: custType === m.k ? '2px solid var(--as-primary)' : undefined }}
-            onClick={() => setCustType(m.k as typeof custType)}
-          >
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{m.k}</div>
-            <div style={{ fontSize: 12, fontFamily: 'var(--f-mono)', color: 'var(--as-mute)', marginBottom: 4 }}>{m.count}</div>
-            <div style={{ fontSize: 12, color: 'var(--as-h)', marginBottom: 6, fontFamily: 'var(--f-mono)' }}>{m.ltv}</div>
-            <div style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>{m.trait}</div>
+      {/* 3. 行動優先級 */}
+      {mode === 'priority' && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ch">
+            <div><h3>行動優先級 (今天該打給誰)</h3><div className="csub">客服每日待辦排序 · 從 P0 開始往下做</div></div>
           </div>
-        ))}
-      </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {PRIORITY_LANES.map(p => {
+              const color = tonColor(p.tone)
+              return (
+                <div key={p.lvl} style={{
+                  display: 'grid', gridTemplateColumns: '52px 1fr auto auto auto',
+                  gap: 14, alignItems: 'center',
+                  padding: '12px 14px', borderRadius: 8,
+                  border: '1px solid var(--as-line)',
+                  borderLeft: `4px solid ${color}`,
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 6, background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, fontFamily: 'var(--f-mono)' }}>
+                    {p.lvl}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{p.t}</div>
+                    <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{p.desc}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', minWidth: 70 }}>
+                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>待處理</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{p.n}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', minWidth: 70 }}>
+                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>最舊 case</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--f-mono)', color }}>{p.oldest}</div>
+                  </div>
+                  <button style={{ padding: '7px 12px', borderRadius: 6, border: `1px solid ${color}`, background: 'transparent', color, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    查看清單 →
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
-      {/* Customer list for selected type */}
+      {/* 4. 使用情境 */}
+      {mode === 'context' && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ch">
+            <div><h3>使用情境 (家庭組成 / 健康訴求)</h3><div className="csub">服務顧問視角 · 一人可同時有多個標籤</div></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+            {CONTEXT_TAGS.map(t => (
+              <div key={t.lbl} style={{
+                border: '1px solid var(--as-line)',
+                borderTop: `3px solid ${t.c}`,
+                borderRadius: 8, padding: 14,
+                display: 'flex', flexDirection: 'column', gap: 6, background: '#fff',
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{t.lbl}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{t.n.toLocaleString()}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ flex: 1, height: 5, borderRadius: 3, background: '#E5E7EB', overflow: 'hidden' }}>
+                    <div style={{ width: `${t.renew}%`, height: '100%', background: t.c }} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'var(--f-mono)', color: t.c }}>{t.renew}%</span>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>續約率</div>
+                <div style={{ fontSize: 11, padding: '6px 8px', background: '#F3F4F6', borderRadius: 5, color: 'var(--as-ink-2)', marginTop: 4 }}>
+                  痛點:{t.pain}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 5. 設備結構 */}
+      {mode === 'device' && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ch">
+            <div><h3>設備持有結構</h3><div className="csub">服務顧問視角 · 影響續約話術與向上銷售</div></div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {DEVICE_STRUCT.map(d => (
+              <div key={d.lbl} style={{
+                display: 'grid', gridTemplateColumns: '1fr 220px 100px 100px',
+                gap: 14, alignItems: 'center',
+                padding: '12px 14px', borderRadius: 8, border: '1px solid var(--as-line)',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{d.lbl}</div>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)', fontFamily: 'var(--f-mono)' }}>{d.n.toLocaleString()} 位 · {d.pct}%</div>
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: '#E5E7EB', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(d.pct * 2, 100)}%`, height: '100%', background: 'var(--as-primary)' }} />
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>平均健康度</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--f-mono)' }}>{d.hp}</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>續約率</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--f-mono)', color: 'var(--as-success)' }}>{d.renew}%</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. 客戶標籤 */}
+      {mode === 'tags' && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ch">
+            <div><h3>客戶標籤</h3><div className="csub">業務 memo 經語意分析後產出 · 點任一標籤可下鑽到符合客戶</div></div>
+            <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>
+              共 <b style={{ color: 'var(--as-ink-2)' }}>{CUSTOMER_TAG_GROUPS.reduce((sum, g) => sum + g.tags.length, 0)}</b> 個標籤 · <b style={{ color: 'var(--as-ink-2)' }}>{CUSTOMER_TAG_GROUPS.length}</b> 大類
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {CUSTOMER_TAG_GROUPS.map(g => (
+              <div key={g.dim} style={{
+                borderLeft: `3px solid ${g.color}`,
+                paddingLeft: 12, paddingTop: 2, paddingBottom: 2,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: g.color }}>{g.dim}</div>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{g.tags.length} 個標籤</div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {g.tags.map(t => {
+                    const tColor = tonColor(t.c)
+                    return (
+                      <div key={t.lbl} style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '5px 10px', borderRadius: 6,
+                        border: '1px solid var(--as-line)',
+                        background: '#fff',
+                        cursor: 'pointer',
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: tColor, flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{t.lbl}</span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, fontFamily: 'var(--f-mono)',
+                          color: tColor, padding: '1px 6px', borderRadius: 3,
+                          background: tColor + '18',
+                        }}>
+                          {t.n.toLocaleString()}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{
+            marginTop: 14, padding: '10px 12px', borderRadius: 6,
+            background: '#F3F4F6', fontSize: 11, color: 'var(--as-mute)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span style={{ fontWeight: 700, color: 'var(--as-ink-2)' }}>💡 用法</span>
+            <span>客戶標籤來自業務 memo 語意分析 — 可直接搭配「組合分群」與其他維度(生命週期、行動優先級等)疊加使用。</span>
+          </div>
+        </div>
+      )}
+
+      {/* 組合分群 (always shown at bottom) */}
       <div className="card">
         <div className="ch">
-          <div><h3>{custType}客戶</h3><div className="csub">代表性客戶列表</div></div>
+          <div><h3>組合分群 (跨維度疊加)</h3><div className="csub">儲存的常用視圖 · 直接觸發行動</div></div>
+          <button
+            onClick={openModal}
+            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--as-primary)', background: 'var(--as-primary)', color: '#fff', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+          >
+            + 新增組合
+          </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {SEG_CUSTOMERS[custType].map(c => (
-            <div key={c.id} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 12, alignItems: 'center', padding: '10px 12px', border: '1px solid var(--as-line)', borderRadius: 8 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--as-cdefg)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
-                {c.av}
-              </div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nm}</div>
-                <div style={{ fontSize: 11, color: 'var(--as-mute)', fontFamily: 'var(--f-mono)' }}>{c.id}</div>
-              </div>
-              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: tierColor(c.tier) + '18', color: tierColor(c.tier), fontWeight: 600 }}>{c.tier}</span>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--f-mono)' }}>{c.metric}</div>
-                <span className={`pill ${c.sigCls}`} style={{ fontSize: 10 }}>{c.signal}</span>
-              </div>
+          {combos.length === 0 && (
+            <div style={{ padding: '24px 12px', textAlign: 'center', fontSize: 12, color: 'var(--as-mute)', border: '1px dashed var(--as-line)', borderRadius: 8 }}>
+              還沒有儲存任何組合 — 點右上「+ 新增組合」開始建立
             </div>
-          ))}
+          )}
+          {combos.map((c, i) => {
+            const color = tonColor(c.cls)
+            return (
+              <div key={i} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14,
+                padding: '10px 12px', borderRadius: 8, border: '1px solid var(--as-line)',
+              }}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {c.tags.map((t, ti) => (
+                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                        background: color + '22', color, fontWeight: 600,
+                      }}>{t}</span>
+                      {ti < c.tags.length - 1 && <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>×</span>}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>負責:<b style={{ color: 'var(--as-ink-2)' }}>{c.owner}</b></div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--f-mono)', minWidth: 64, textAlign: 'right' }}>{c.n} 人</div>
+                  <button
+                    onClick={() => removeCombo(i)}
+                    title="刪除這個組合"
+                    style={{ padding: '6px 9px', borderRadius: 6, border: '1px solid var(--as-line)', background: '#fff', color: 'var(--as-mute)', fontSize: 12, cursor: 'pointer' }}
+                  >
+                    ✕
+                  </button>
+                  <button style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--as-primary)', background: 'var(--as-primary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    展開 →
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
+
+      {/* 新增組合 modal */}
+      {showModal && (
+        <div
+          onClick={() => setShowModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'rgba(15, 23, 42, 0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 12,
+              width: 780, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+            }}
+          >
+            {/* header */}
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--as-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>新增組合分群</h3>
+                <div className="csub" style={{ marginTop: 4 }}>跨維度疊加 · 預估匹配人數會即時更新</div>
+              </div>
+              <button
+                onClick={() => setShowModal(false)}
+                style={{ width: 30, height: 30, borderRadius: 6, border: '1px solid var(--as-line)', background: '#fff', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: 'var(--as-mute)' }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* body (scrollable) */}
+            <div style={{ padding: '18px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>1. 選擇標籤 <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--as-mute)' }}>(至少 2 個 · 跨維度可疊加)</span></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {ALL_TAG_GROUPS.map(g => (
+                    <div key={g.dim}>
+                      <div style={{ fontSize: 11, color: 'var(--as-mute)', marginBottom: 5, fontWeight: 600 }}>{g.dim}</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {g.tags.map(t => {
+                          const sel = draftTags.includes(t)
+                          return (
+                            <button
+                              key={t}
+                              onClick={() => toggleDraftTag(t)}
+                              style={{
+                                padding: '4px 10px', borderRadius: 4, fontSize: 11,
+                                border: '1px solid ' + (sel ? 'var(--as-primary)' : 'var(--as-line)'),
+                                background: sel ? 'var(--as-primary)' : '#fff',
+                                color: sel ? '#fff' : 'var(--as-ink)',
+                                fontWeight: sel ? 600 : 400, cursor: 'pointer',
+                              }}
+                            >
+                              {sel && <span style={{ marginRight: 4 }}>✓</span>}
+                              {t}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>2. 指派負責角色</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {COMBO_OWNERS.map(o => {
+                    const sel = draftOwner === o
+                    return (
+                      <button
+                        key={o}
+                        onClick={() => setDraftOwner(o)}
+                        style={{
+                          padding: '6px 12px', borderRadius: 6, fontSize: 12,
+                          border: '1px solid ' + (sel ? 'var(--as-primary)' : 'var(--as-line)'),
+                          background: sel ? 'var(--as-primary)' : '#fff',
+                          color: sel ? '#fff' : 'var(--as-ink)',
+                          fontWeight: sel ? 600 : 400, cursor: 'pointer',
+                        }}
+                      >
+                        {o}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* preview */}
+              <div style={{ padding: '14px 16px', borderRadius: 10, background: '#F3F4F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>預估匹配人數</div>
+                  <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--f-mono)', lineHeight: 1.1, color: draftTags.length >= 2 ? 'var(--as-primary)' : 'var(--as-mute)' }}>
+                    {draftTags.length >= 2 ? `${draftEstimate.toLocaleString()} 位` : '—'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 460 }}>
+                  {draftTags.length === 0
+                    ? <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>還沒選任何標籤</span>
+                    : draftTags.map((t, ti) => (
+                      <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: '#fff', border: '1px solid var(--as-line)', fontWeight: 600 }}>
+                          {t}
+                        </span>
+                        {ti < draftTags.length - 1 && <span style={{ color: 'var(--as-mute)', fontSize: 12 }}>×</span>}
+                      </span>
+                    ))
+                  }
+                </div>
+              </div>
+            </div>
+
+            {/* footer */}
+            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--as-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 11, color: canSave ? 'var(--as-mute)' : 'var(--as-warning)' }}>
+                {canSave ? `已選 ${draftTags.length} 個標籤 · 負責 ${draftOwner}` : '請選擇至少 2 個標籤'}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setShowModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--as-line)', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+                >
+                  取消
+                </button>
+                <button
+                  disabled={!canSave}
+                  onClick={saveCombo}
+                  style={{
+                    padding: '8px 18px', borderRadius: 6,
+                    border: '1px solid ' + (canSave ? 'var(--as-primary)' : 'var(--as-line)'),
+                    background: canSave ? 'var(--as-primary)' : '#F3F4F6',
+                    color: canSave ? '#fff' : 'var(--as-mute)',
+                    fontSize: 13, fontWeight: 700,
+                    cursor: canSave ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  儲存組合
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -1143,29 +1723,31 @@ export function ModuleB() {
       activeTab={tab}
       onTab={setTab}
     >
-      {/* ── Global KPI row (always visible) ── */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <div className="kpi purple">
-          <div className="lbl">總會員</div>
-          <div className="val">8,471<span className="u">位</span></div>
-          <div className="ft"><span className="delta up"><Icon name="up" size={11} />+342 本月</span><Sparkline data={[7200, 7400, 7600, 7750, 7900, 8000, 8100, 8250, 8380, 8471]} color="var(--as-cdefg)" /></div>
+      {/* ── KPI row (只在整體層顯示) ── */}
+      {tab === 'overall' && (
+        <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <div className="kpi purple">
+            <div className="lbl">總會員</div>
+            <div className="val">8,471<span className="u">位</span></div>
+            <div className="ft"><span className="delta up"><Icon name="up" size={11} />+342 本月</span><Sparkline data={[7200, 7400, 7600, 7750, 7900, 8000, 8100, 8250, 8380, 8471]} color="var(--as-cdefg)" /></div>
+          </div>
+          <div className="kpi green">
+            <div className="lbl">活躍率</div>
+            <div className="val">68.4<span className="u">%</span></div>
+            <div className="ft"><span className="delta up"><Icon name="up" size={11} />+1.2 pp</span><Sparkline data={[64, 65, 65, 66, 66, 67, 67, 68, 68, 68]} color="var(--as-primary)" /></div>
+          </div>
+          <div className="kpi orange">
+            <div className="lbl">本月新增</div>
+            <div className="val">342<span className="u">位</span></div>
+            <div className="ft"><span className="delta up"><Icon name="up" size={11} />+4.9%</span><Sparkline data={B_NEW_JOIN} color="var(--as-h)" /></div>
+          </div>
+          <div className="kpi red">
+            <div className="lbl">高風險</div>
+            <div className="val">23<span className="u">位</span></div>
+            <div className="ft"><span className="delta dn"><Icon name="down" size={11} />−3 vs 昨日</span><Sparkline data={[30, 29, 28, 27, 26, 26, 25, 24, 24, 23]} color="var(--as-danger)" /></div>
+          </div>
         </div>
-        <div className="kpi green">
-          <div className="lbl">活躍率</div>
-          <div className="val">68.4<span className="u">%</span></div>
-          <div className="ft"><span className="delta up"><Icon name="up" size={11} />+1.2 pp</span><Sparkline data={[64, 65, 65, 66, 66, 67, 67, 68, 68, 68]} color="var(--as-primary)" /></div>
-        </div>
-        <div className="kpi orange">
-          <div className="lbl">本月新增</div>
-          <div className="val">342<span className="u">位</span></div>
-          <div className="ft"><span className="delta up"><Icon name="up" size={11} />+4.9%</span><Sparkline data={B_NEW_JOIN} color="var(--as-h)" /></div>
-        </div>
-        <div className="kpi red">
-          <div className="lbl">高風險</div>
-          <div className="val">23<span className="u">位</span></div>
-          <div className="ft"><span className="delta dn"><Icon name="down" size={11} />−3 vs 昨日</span><Sparkline data={[30, 29, 28, 27, 26, 26, 25, 24, 24, 23]} color="var(--as-danger)" /></div>
-        </div>
-      </div>
+      )}
 
       {tab === 'overall'    && <OverallView />}
       {tab === 'segment'    && <SegmentView />}
