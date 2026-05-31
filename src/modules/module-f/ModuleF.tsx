@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   REVENUE_KPIS,
   CUSTOMER_SOURCES,
@@ -21,7 +22,7 @@ function CustomerTypeView() {
   return (
     <>
       {/* 4 large customer-type cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }} {...batchAttrs('F.客戶類型')}>
         {CUSTOMER_SOURCES.map(src => (
           <div key={src.k} className="card" style={{ borderTop: `3px solid ${src.clr}`, padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -64,7 +65,7 @@ function CustomerTypeView() {
       </div>
 
       {/* 推薦轉換漏斗 */}
-      <div className="card">
+      <div className="card" {...batchAttrs('F.推薦轉換漏斗')}>
         <div className="ch">
           <div>
             <h3>推薦轉換漏斗</h3>
@@ -117,7 +118,7 @@ function SubscriptionView() {
   return (
     <>
       {/* Subscription plan breakdown */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('F.訂閱結構')}>
         <div className="ch">
           <div><h3>訂閱方案分佈</h3><div className="csub">共 {totalPlans.toLocaleString()} 位訂閱用戶</div></div>
         </div>
@@ -210,7 +211,7 @@ function ChannelView() {
   return (
     <>
       {/* Sales channel bar chart */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('F.通路與客群')}>
         <div className="ch">
           <div><h3>銷售通路績效</h3><div className="csub">本月營收 (萬元) · 6 個通路</div></div>
         </div>
@@ -282,7 +283,7 @@ function TopCustomerView() {
   }
 
   return (
-    <div className="card">
+    <div className="card" {...batchAttrs('F.Top客戶')}>
       <div className="ch">
         <div><h3>Top 客戶排名</h3><div className="csub">依 LTV 排序 · 顯示前 10 名</div></div>
         <input className="search" placeholder="搜尋客戶..." />
@@ -362,7 +363,7 @@ function GoalView() {
   }
 
   return (
-    <div className="card">
+    <div className="card" {...batchAttrs('F.目標達成')}>
       <div className="ch">
         <div><h3>本月目標達成</h3><div className="csub">5 項關鍵指標 · 即時追蹤</div></div>
         <span className="chip">Q2 2026</span>
@@ -429,7 +430,7 @@ export function ModuleF() {
       onTab={setTab}
     >
       {/* KPI cards */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('F.KPI')}>
         {REVENUE_KPIS.map(k => (
           <div key={k.lbl} className={`kpi ${k.accent}`}>
             <div className="lbl">{k.lbl}</div>

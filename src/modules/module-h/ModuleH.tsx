@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   H_KPIS,
   H_RECS,
@@ -141,7 +142,7 @@ function AllRecsTab() {
       {/* LEFT */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* AI 摘要橫幅 */}
-        <div style={{
+        <div {...batchAttrs('H.AI 摘要 / 聊天')} style={{
           padding: '14px 18px',
           background: 'linear-gradient(135deg, var(--as-h-tint) 0%, #FFF3CD 100%)',
           border: '1px solid #FDE68A', borderLeft: '4px solid var(--as-h)', borderRadius: 8,
@@ -176,7 +177,7 @@ function AllRecsTab() {
       </div>
 
       {/* RIGHT: 3 rec cards based on active category */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} {...batchAttrs('H.建議卡')}>
         <div style={{ padding: '10px 14px', background: '#fff', border: '1px solid var(--as-line)', borderRadius: 8, marginBottom: 4 }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: cat.accent, marginBottom: 2 }}>{cat.nm}</div>
           <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>{cat.sub} · {cat.total} 條建議 · 預估影響 {cat.impact}</div>
@@ -233,7 +234,7 @@ function AdoptedTab() {
   return (
     <div>
       {/* 5 metric KPIs */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 20 }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 20 }} {...batchAttrs('H.已採納 / 駁回')}>
         {[
           { lbl: '已採納', val: '14', u: '條', cls: 'purple', spark: [8,9,10,11,12,12,13,13,14,14] },
           { lbl: '成功', val: '10', u: '條', cls: 'green', spark: [5,6,7,7,8,8,9,9,10,10] },
@@ -459,7 +460,7 @@ export function ModuleH() {
       onTab={setTab}
     >
       {/* KPI row */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('H.KPI')}>
         {H_KPIS.map(k => (
           <div key={k.lbl} className={`kpi ${k.cls}`}>
             <div className="lbl">{k.lbl}</div>

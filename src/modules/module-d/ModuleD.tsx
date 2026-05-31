@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   PRODUCTS,
   FLEET_DEVICES,
@@ -38,7 +39,7 @@ function CatalogView() {
       </div>
 
       {/* Category cards grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }} {...batchAttrs('D.產品目錄')}>
         {CATEGORIES.map(c => (
           <div className="card" key={c.nm} style={{ cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -127,7 +128,7 @@ function FleetView() {
   return (
     <>
       {/* Summary strip */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', margin: '16px 0' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', margin: '16px 0' }} {...batchAttrs('D.裝置艦隊')}>
         <div className="kpi green">
           <div className="lbl">已部署裝置</div>
           <div className="val">12,481<span className="u">台</span></div>
@@ -264,7 +265,7 @@ function urgencyPillCls(cls: '' | 'y' | 'r'): string {
 function ConsumableView() {
   return (
     <>
-      <div className="two-col" style={{ marginTop: 16 }}>
+      <div className="two-col" style={{ marginTop: 16 }} {...batchAttrs('D.耗材庫存')}>
         {/* Stock level cards */}
         <div>
           <div className="card" style={{ marginBottom: 14 }}>
@@ -370,7 +371,7 @@ function QualityView() {
   return (
     <>
       {/* Hero KPI row */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', margin: '16px 0' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', margin: '16px 0' }} {...batchAttrs('D.品質與良率')}>
         <div className="kpi green">
           <div className="lbl">首次通過良率 (FPY)</div>
           <div className="val">94.7<span className="u">%</span></div>
@@ -508,7 +509,7 @@ function FirmwareView() {
   return (
     <>
       {/* 4 version distribution cards */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', margin: '16px 0' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', margin: '16px 0' }} {...batchAttrs('D.軟體版本')}>
         {FIRMWARE_VERSIONS.map(f => {
           const cls = f.latest ? 'green' : f.old ? 'red' : f.v === '2.4.0' ? 'purple' : 'orange'
           const sparkData = f.latest
@@ -640,7 +641,7 @@ export function ModuleD() {
       onTab={setTab}
     >
       {/* Global KPI row */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('D.KPI')}>
         <div className="kpi purple">
           <div className="lbl">在售 SKU</div>
           <div className="val">6<span className="u">款</span></div>

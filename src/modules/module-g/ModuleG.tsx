@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   G_KPIS,
   CERT_FUNNEL,
@@ -20,7 +21,7 @@ function CertFunnelTab() {
   return (
     <div>
       {/* Horizontal Funnel */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('G.健康證書')}>
         <div className="ch">
           <div>
             <h3>健康證書推薦漏斗</h3>
@@ -181,7 +182,7 @@ function CertFunnelTab() {
 function ReferralTab() {
   return (
     <div>
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }} {...batchAttrs('G.推薦計劃')}>
         <div className="kpi green">
           <div className="lbl">本月邀請</div>
           <div className="val">189<span className="u">次</span></div>
@@ -349,7 +350,7 @@ function CampaignsTab() {
   return (
     <div>
       {/* Campaign cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 20 }} {...batchAttrs('G.活動管理')}>
         {CAMPAIGNS.map((c) => (
           <div key={c.title} style={{ border: '1px solid var(--as-line)', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
             <div style={{
@@ -477,7 +478,7 @@ function DataGapTab() {
   const overall = DATA_GAP_SOURCES.reduce((a, b) => a + b.cov, 0) / DATA_GAP_SOURCES.length
 
   return (
-    <div>
+    <div {...batchAttrs('G.數據缺口')}>
       {/* Red alert banner */}
       <div style={{
         padding: '16px 20px',
@@ -618,7 +619,7 @@ export function ModuleG() {
       onTab={setTab}
     >
       {/* KPI row */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4,1fr)' }} {...batchAttrs('G.KPI')}>
         {G_KPIS.map((k) => (
           <div key={k.lbl} className={`kpi ${k.cls}`}>
             <div className="lbl">{k.lbl}</div>

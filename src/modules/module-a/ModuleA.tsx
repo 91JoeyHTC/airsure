@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   FIELDS_A_FULL,
   FIELD_DELTAS,
@@ -13,7 +14,6 @@ import {
   SITE_TREND,
   SEGMENTS_A,
   CONSUMABLE_CATS,
-  URGENT_DEVICES,
   CATEGORIES,
   CATEGORY_DIST,
   DISPOSITION_ROLLUP,
@@ -25,7 +25,6 @@ import {
   CATEGORY_FLOWS,
   CATEGORY_FLOW_SUMMARY,
   FIELD_OUTDOOR_PM25,
-  URGENT_DEVICE_TO_FIELD,
   FIELD_DETAIL_WANG,
   type CatId,
   type FieldRecord,
@@ -46,13 +45,40 @@ function tone(pct: number): Tone {
 /* ── 整體層 ─────────────────────────────────────────── */
 type HeatDim = 'health' | 'type' | 'gap'
 
-function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail: (fid: string) => void }) {
+function AOverview({
+  onOpenDetail,
+  onJumpListByCategory,
+}: {
+  onOpenDetail: (fid: string) => void
+  /** 點 upsell 卡時跳個人層「場域清單」並鎖定該類別 */
+  onJumpListByCategory: (catId: CatId) => void
+}) {
   const [heatDim, setHeatDim] = useState<HeatDim>('health')
+  // 選中的區域(由區域熱圖點擊帶入,連動下方場域明細表)
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null)
 
   const catMeta = (id: CatId) => CATEGORIES.find((c) => c.id === id)!
   const okRow = DISPOSITION_ROLLUP.find((d) => d.key === 'ok')!
   const attnRow = DISPOSITION_ROLLUP.find((d) => d.key === 'attention')!
   const warnRow = DISPOSITION_ROLLUP.find((d) => d.key === 'warning')!
+
+  // 依場域 nm 推斷區域,對應 REGION_HEALTH 的 r 欄位
+  const regionOf = (f: FieldRecord): string => {
+    const n = f.nm
+    if (n.startsWith('臺北') || n.startsWith('台北')) return '臺北市'
+    if (n.startsWith('新北')) return '新北市'
+    if (n.startsWith('桃園')) return '桃園市'
+    if (n.startsWith('新竹')) return '新竹縣市'
+    if (n.startsWith('臺中') || n.startsWith('台中')) return '臺中市'
+    if (n.startsWith('臺南') || n.startsWith('台南')) return '臺南市'
+    if (n.startsWith('高雄')) return '高雄市'
+    return '其他'
+  }
+  // 場域明細表的顯示資料(依選中區域過濾)
+  const visibleFields = selectedRegion
+    ? FIELDS_A_FULL.filter((f) => regionOf(f) === selectedRegion)
+    : FIELDS_A_FULL
+  const selectedRegionMeta = selectedRegion ? REGION_HEALTH.find((x) => x.r === selectedRegion) : null
 
   const heatLegend: Record<HeatDim, { lbls: { c: string; t: string }[]; tip: string }> = {
     health: {
@@ -83,8 +109,8 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
 
   return (
     <>
-      {/* KPI 卡 */}
-      <div className="kpi-row">
+      {/* KPI 卡 — 2026-05-29 依 PDF 改成 5 卡:場域 / 連網開機 / 空氣品質 / 空氣濕度 / 環境健康分數 */}
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }} {...batchAttrs('A.KPI')}>
         {/* ① 使用中場域 */}
         <div className="kpi green">
           <div className="lbl">使用中場域</div>
@@ -108,9 +134,29 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
           </div>
         </div>
 
-        {/* ③ 平均 DHI — 加機器貢獻歸因 */}
+        {/* ③ 空氣品質 PM2.5(2026-05-29 依 PDF,原 DHI 改放第 5 卡) */}
+        <div className="kpi green">
+          <div className="lbl">空氣品質 · PM2.5</div>
+          <div className="val">2<span className="u">µg/m³</span></div>
+          <div className="ft">
+            <span className="delta up"><Icon name="down" size={11} />−1.8 vs 昨日 · WHO 良好</span>
+            <Sparkline data={[8, 7, 6, 6, 5, 4, 3, 2]} color="var(--as-success)" />
+          </div>
+        </div>
+
+        {/* ④ 空氣濕度 58 %(2026-05-29 依 PDF,原類型處置分布移除 — 該圖表在下方六大類型卡仍可見) */}
+        <div className="kpi purple">
+          <div className="lbl">空氣濕度 · 平均相對</div>
+          <div className="val">58<span className="u">%</span></div>
+          <div className="ft">
+            <span className="delta up"><Icon name="up" size={11} />舒適區間 50–60%</span>
+            <Sparkline data={[55, 56, 57, 58, 58, 57, 58, 58]} color="var(--as-cdefg)" />
+          </div>
+        </div>
+
+        {/* ⑤ 平均環境健康分數(2026-05-29 新增,沿用原 DHI 82 分內容) */}
         <div className="kpi orange">
-          <div className="lbl">今日平均 DHI</div>
+          <div className="lbl">平均環境健康分數</div>
           <div className="val">82<span className="u">分</span></div>
           <div className="ft">
             <span className="delta up">
@@ -119,31 +165,12 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
             <Sparkline data={AHI_TREND} color="var(--as-warning)" />
           </div>
         </div>
-
-        {/* ④ 六大類型處置分布(取代「需注意場域 42」) */}
-        <div className="kpi red">
-          <div className="lbl">類型處置分布</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-            <span style={{ fontSize: 26, fontWeight: 700, color: 'var(--as-danger)', lineHeight: 1 }}>{warnRow.n}</span>
-            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>戶需警告處理({warnRow.pct}%)</span>
-          </div>
-          <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 10, background: 'var(--as-line-2)' }}>
-            <div style={{ width: `${okRow.pct}%`, background: 'var(--as-success)' }} title={`OK ${okRow.n} 戶`}></div>
-            <div style={{ width: `${attnRow.pct}%`, background: 'var(--as-warning)' }} title={`建議處理 ${attnRow.n} 戶`}></div>
-            <div style={{ width: `${warnRow.pct}%`, background: 'var(--as-danger)' }} title={`警告處理 ${warnRow.n} 戶`}></div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--as-ink-2)', marginTop: 6, fontFamily: 'var(--f-mono)' }}>
-            <span><span style={{ color: 'var(--as-success)' }}>●</span> OK {okRow.n}</span>
-            <span><span style={{ color: 'var(--as-warning)' }}>●</span> 建議 {attnRow.n}</span>
-            <span><span style={{ color: 'var(--as-danger)' }}>●</span> 警告 {warnRow.n}</span>
-          </div>
-        </div>
       </div>
 
       {/* 六大類型分布 + 類型流動(Phase 1.5) */}
       <div className="two-col" style={{ marginTop: 16 }}>
         {/* 六大類型分布 */}
-        <div className="card">
+        <div className="card" {...batchAttrs('A.整體.六大類型分布')}>
           <div className="ch">
             <div>
               <h3>六大類型分布</h3>
@@ -192,7 +219,7 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
         </div>
 
         {/* 類型流動 */}
-        <div className="card">
+        <div className="card" {...batchAttrs('A.整體.類型流動月遷移')}>
           <div className="ch">
             <div>
               <h3>類型流動 · 本月遷移</h3>
@@ -243,23 +270,30 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
         </div>
       </div>
 
-      {/* upsell 機會池 */}
-      <div className="card" style={{ marginTop: 16 }}>
+      {/* 建議聯繫客戶(原 upsell 機會池;2026-05-29 依 PDF 改名 + 卡片點擊跳場域清單篩類別) */}
+      <div className="card" style={{ marginTop: 16 }} {...batchAttrs('A.upsell 機會池')}>
         <div className="ch">
           <div>
-            <h3>upsell 機會池 · 對應 CS 系列產品訴求</h3>
-            <div className="csub">把「分類」變成「營收」 — 三類目標族群 · 共 238 戶</div>
+            <h3>建議聯繫客戶</h3>
+            <div className="csub">對應 CS 系列產品訴求 · 三類目標族群 · 共 238 戶 · 點任一卡查看場域清單</div>
           </div>
-          <button className="btn" onClick={onJump}><Icon name="arrow" size={13} />下鑽至分群</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 8 }}>
           {UPSELL_POOL.map((slot) => {
             const meta = catMeta(slot.catId)
             return (
-              <div key={slot.catId} style={{
-                padding: 14, border: `1px solid ${meta.color}40`,
-                background: meta.bg, borderRadius: 10,
-              }}>
+              <div
+                key={slot.catId}
+                onClick={() => onJumpListByCategory(slot.catId)}
+                title={`查看 ${meta.code}(${slot.n} 戶)的場域清單`}
+                style={{
+                  padding: 14, border: `1px solid ${meta.color}40`,
+                  background: meta.bg, borderRadius: 10,
+                  cursor: 'pointer', transition: 'transform .12s, box-shadow .12s',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 6px 14px ${meta.color}33` }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <span style={{ width: 24, height: 24, borderRadius: 6, background: meta.color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{meta.id}</span>
                   <b style={{ fontSize: 13, color: meta.color }}>{slot.code}</b>
@@ -272,9 +306,15 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
                   <b>{slot.product}</b><br />
                   <span style={{ color: 'var(--as-mute)' }}>{slot.pitch}</span>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--as-mute)', borderTop: '1px dashed var(--as-line)', paddingTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 10, color: 'var(--as-mute)', borderTop: '1px dashed var(--as-line)', paddingTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>{slot.ltvHint}</span>
-                  <button className="btn" style={{ padding: '2px 8px', fontSize: 10, height: 'auto' }}>名單匯出</button>
+                  <button
+                    className="btn"
+                    style={{ padding: '2px 8px', fontSize: 10, height: 'auto' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    名單匯出
+                  </button>
                 </div>
               </div>
             )
@@ -371,7 +411,7 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
         </div>
 
         {/* 區域分佈 — 三維度切換 */}
-        <div className="card span-2">
+        <div className="card span-2" {...batchAttrs('A.整體.區域熱圖')}>
           <div className="ch">
             <div>
               <h3>區域分佈 — 三維度熱圖</h3>
@@ -430,11 +470,34 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
                 mainVal = `${x.blockedPct}%`
                 subVal = '示意'
               }
+              const isActive = selectedRegion === x.r
               return (
-                <div className={`heat ${cls}`} key={x.r} style={{ opacity: heatDim === 'gap' ? 0.85 : 1 }}>
+                <div
+                  className={`heat ${cls}`}
+                  key={x.r}
+                  onClick={() => setSelectedRegion(isActive ? null : x.r)}
+                  title={isActive ? `取消選取「${x.r}」` : `點擊鎖定「${x.r}」並篩選下方場域明細表`}
+                  style={{
+                    opacity: heatDim === 'gap' ? 0.85 : 1,
+                    cursor: 'pointer',
+                    outline: isActive ? '3px solid var(--as-primary)' : 'none',
+                    outlineOffset: isActive ? 2 : 0,
+                    transform: isActive ? 'scale(1.02)' : 'none',
+                    transition: 'transform 0.12s, outline-color 0.12s',
+                    position: 'relative',
+                  }}
+                >
                   <div className="hr">{x.r}</div>
                   <div className="hv">{mainVal}</div>
                   <div className="hn">{x.n} 場域 <span className={`dlt ${dimCls}`}>{subVal}</span></div>
+                  {isActive && (
+                    <span style={{
+                      position: 'absolute', top: 6, right: 6,
+                      fontSize: 9, fontWeight: 700, color: '#fff',
+                      background: 'var(--as-primary)', padding: '1px 6px',
+                      borderRadius: 999,
+                    }}>已選</span>
+                  )}
                 </div>
               )
             })}
@@ -448,8 +511,42 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
         </div>
       </div>
 
-      {/* 場域明細表(加六大類型欄、室外 PM2.5 欄、日均 hrs 欄) */}
-      <div className="dt-wrap" style={{ marginTop: 16 }}>
+      {/* 場域明細表(加六大類型欄、室外 PM2.5 欄、日均 hrs 欄)
+          · 2026-05-29 連動上方區域熱圖:點區域 → 此表自動篩選 */}
+      <div className="dt-wrap" style={{ marginTop: 16 }} {...batchAttrs('A.整體.場域明細表')}>
+        {/* 區域篩選 chip(由區域熱圖點擊帶入時顯示) */}
+        {selectedRegionMeta && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', marginBottom: 8,
+            background: 'var(--as-primary-tint)',
+            border: '1px solid var(--as-primary)', borderRadius: 8,
+          }}>
+            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>區域篩選 ·</span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '4px 10px', borderRadius: 999,
+              background: 'var(--as-primary)', color: '#fff',
+              fontSize: 12, fontWeight: 700,
+            }}>
+              <Icon name="globe" size={11} />
+              {selectedRegionMeta.r}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>
+              該區 <b style={{ color: 'var(--as-primary)' }}>{selectedRegionMeta.n}</b> 場域 · 健康度 {selectedRegionMeta.q}
+              <span style={{ color: 'var(--as-mute)', marginLeft: 6 }}>
+                · 表內示意 {visibleFields.length} 筆(全體 mock {FIELDS_A_FULL.length} 筆)
+              </span>
+            </span>
+            <button
+              className="btn"
+              onClick={() => setSelectedRegion(null)}
+              style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11, height: 'auto' }}
+            >
+              <Icon name="x" size={11} />清除篩選
+            </button>
+          </div>
+        )}
         <table className="dt">
           <thead>
             <tr>
@@ -469,7 +566,7 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
             </tr>
           </thead>
           <tbody>
-            {FIELDS_A_FULL.map((f) => {
+            {visibleFields.map((f) => {
               const meta = catMeta(f.cat)
               const outdoor = FIELD_OUTDOOR_PM25[f.id]
               return (
@@ -521,28 +618,24 @@ function AOverview({ onJump, onOpenDetail }: { onJump: () => void; onOpenDetail:
           </tbody>
         </table>
         <div className="dt-foot">
-          <span>顯示 9 / 1,284 筆 · 點任一列 → 切到個人層場域詳情 · 「室外 PM2.5」待環境部 API 接通</span>
+          <span>
+            {selectedRegionMeta
+              ? `顯示 ${visibleFields.length} / ${selectedRegionMeta.n} 筆(區域:${selectedRegionMeta.r})· 點任一列進場域詳情`
+              : `顯示 ${visibleFields.length} / 1,284 筆 · 點任一列 → 切到個人層場域詳情 · 「室外 PM2.5」待環境部 API 接通`}
+          </span>
           <div className="pager">
             <button>‹</button>
             <button className="on">1</button>
             <button>2</button>
             <button>3</button>
             <span className="ell">…</span>
-            <button>143</button>
+            <button>{selectedRegionMeta ? Math.max(1, Math.ceil(selectedRegionMeta.n / 9)) : 143}</button>
             <button>›</button>
           </div>
         </div>
       </div>
 
-      {/* 下鑽至分群層(加六大類型副標) */}
-      <div className="ov-jump" style={{ marginTop: 16 }}>
-        <div className="ov-jh"><b>↘ 下鑽至分群層</b> · 從整體統計切入到具體分群</div>
-        <div className="ov-jb">
-          <button className="ov-jc" onClick={onJump}><span>耗材壽命分群</span><i>立即/近期/觀察/充足 · 預測下次更換</i></button>
-          <button className="ov-jc" onClick={onJump}><span>使用強度分群</span><i>呼應①②高活躍 · 重度 / 中度 / 輕度</i></button>
-          <button className="ov-jc" onClick={onJump}><span>水箱頻率分群</span><i>類型 ④⑥ 視角 · 除濕需求 高 / 中 / 低</i></button>
-        </div>
-      </div>
+      {/* 下鑽至分群層區塊已依 2026-05-29 PDF 拿掉 */}
     </>
   )
 }
@@ -578,21 +671,12 @@ function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
 
   return (
     <>
-      <div className="seg-banner">
-        <div className="sb-lv">★ 分群層</div>
-        <div className="sb-tx">
-          <h3>四軸交叉分群 · 12,481 設備 / 1,284 場域</h3>
-          <div className="sb-sub">v4 規格 A.5 · 點任一分群 row 即展開該條件下的場域清單</div>
-        </div>
-        <div className="sb-ac">
-          <button className="btn"><Icon name="download" size={13} />分群名單匯出</button>
-        </div>
-      </div>
+      {/* 分群層 hero 已依 2026-05-29 PDF 拉掉 */}
 
       {/* 統一 2×3 grid(一排兩個):空氣品質 / 濕度控制 / 分群卡 × 3 / 場域類型分佈(右下) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
         {/* 空氣品質(PM2.5) */}
-        <div className="card">
+        <div className="card" {...batchAttrs('A.分群.空品濕度分布')}>
           <div className="ch">
             <div>
               <h3><Icon name="wind" size={14} /> 空氣品質</h3>
@@ -642,7 +726,7 @@ function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
         </div>
 
         {/* 濕度控制 */}
-        <div className="card">
+        <div className="card" {...batchAttrs('A.分群.空品濕度分布')}>
           <div className="ch">
             <div>
               <h3><Icon name="drop" size={14} /> 濕度控制</h3>
@@ -884,6 +968,8 @@ function APersonal({
   setCurrentFieldId,
   onJumpOverview,
   onJumpSegments,
+  catFilter,
+  setCatFilter,
 }: {
   subTab: APersonalSub
   setSubTab: (s: APersonalSub) => void
@@ -891,6 +977,9 @@ function APersonal({
   setCurrentFieldId: (fid: string) => void
   onJumpOverview: () => void
   onJumpSegments: () => void
+  /** 場域清單類別篩選(由上層 upsell 卡片帶入) */
+  catFilter: CatId | null
+  setCatFilter: (id: CatId | null) => void
 }) {
   const openDetail = (fid: string) => {
     setCurrentFieldId(fid)
@@ -904,7 +993,7 @@ function APersonal({
         {([
           { k: 'list', l: '場域清單', n: 1284 },
           { k: 'detail', l: '場域詳情' },
-          { k: 'consumable', l: '耗材庫存' },
+          { k: 'consumable', l: '濾網管理' },
           { k: 'tank', l: '水箱管理' },
         ] as Array<{ k: APersonalSub; l: string; n?: number }>).map((t) => (
           <div
@@ -926,7 +1015,13 @@ function APersonal({
           onJumpSegments={onJumpSegments}
         />
       )}
-      {subTab === 'list' && <ALocationList onSelect={openDetail} />}
+      {subTab === 'list' && (
+        <ALocationList
+          onSelect={openDetail}
+          catFilter={catFilter}
+          onClearCatFilter={() => setCatFilter(null)}
+        />
+      )}
       {subTab === 'consumable' && <AConsumables onSelect={openDetail} />}
       {subTab === 'tank' && <ATank />}
     </>
@@ -934,10 +1029,54 @@ function APersonal({
 }
 
 /* ── 場域清單 (個人層) ───────────────────────────────── */
-function ALocationList({ onSelect }: { onSelect: (fid: string) => void }) {
+function ALocationList({
+  onSelect,
+  catFilter,
+  onClearCatFilter,
+}: {
+  onSelect: (fid: string) => void
+  /** 類別篩選(由 upsell 卡片點擊帶入) */
+  catFilter?: CatId | null
+  onClearCatFilter?: () => void
+}) {
   const catMeta = (id: CatId) => CATEGORIES.find((c) => c.id === id)!
+  const filteredFields = catFilter
+    ? FIELDS_A_FULL.filter((f: FieldRecord) => f.cat === catFilter)
+    : FIELDS_A_FULL
+  const filterMeta = catFilter ? catMeta(catFilter) : null
+
   return (
-    <div className="dt-wrap">
+    <div className="dt-wrap" {...(catFilter ? { 'data-cat-filter': catFilter } : {})}>
+      {/* 類別篩選 chip(從 upsell 卡片進來時顯示) */}
+      {filterMeta && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px', marginBottom: 8,
+          background: filterMeta.bg, borderRadius: 8,
+          border: `1px solid ${filterMeta.color}40`,
+        }}>
+          <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>篩選類別 ·</span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 999,
+            background: filterMeta.color, color: '#fff',
+            fontSize: 12, fontWeight: 700,
+          }}>
+            <span style={{ fontFamily: 'var(--f-mono)' }}>{filterMeta.id}</span>
+            {filterMeta.code}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>
+            符合 <b style={{ color: filterMeta.color }}>{filteredFields.length}</b> 筆(全體 {FIELDS_A_FULL.length} 筆)
+          </span>
+          <button
+            className="btn"
+            onClick={onClearCatFilter}
+            style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11, height: 'auto' }}
+          >
+            <Icon name="x" size={11} />清除篩選
+          </button>
+        </div>
+      )}
       <table className="dt">
         <thead>
           <tr>
@@ -957,7 +1096,7 @@ function ALocationList({ onSelect }: { onSelect: (fid: string) => void }) {
           </tr>
         </thead>
         <tbody>
-          {FIELDS_A_FULL.map((f: FieldRecord) => {
+          {filteredFields.map((f: FieldRecord) => {
             const meta = catMeta(f.cat)
             const outdoor = FIELD_OUTDOOR_PM25[f.id]
             return (
@@ -1009,7 +1148,11 @@ function ALocationList({ onSelect }: { onSelect: (fid: string) => void }) {
         </tbody>
       </table>
       <div className="dt-foot">
-        <span>顯示 9 / 1,284 筆 · 點任一列進「場域詳情」</span>
+        <span>
+          {catFilter
+            ? `顯示 ${filteredFields.length} 筆(類別 ${filterMeta?.code})· 點任一列進「場域詳情」`
+            : `顯示 ${filteredFields.length} / 1,284 筆 · 點任一列進「場域詳情」`}
+        </span>
         <div className="pager">
           <button>‹</button>
           <button className="on">1</button>
@@ -1025,83 +1168,139 @@ function ALocationList({ onSelect }: { onSelect: (fid: string) => void }) {
 }
 
 /* ── 耗材庫存 ────────────────────────────────────────── */
-function AConsumables({ onSelect }: { onSelect: (fid: string) => void }) {
-  const tot = CONSUMABLE_CATS.reduce(
-    (a, c) => ({ i: a.i + c.dist.i, n: a.n + c.dist.n, w: a.w + c.dist.w, r: a.r + c.dist.r }),
-    { i: 0, n: 0, w: 0, r: 0 }
-  )
-  const all = tot.i + tot.n + tot.w + tot.r
+/* 濾網管理 tab — 2026-05-29 依 PDF 重構:
+ *  · 拿掉 4 階段 KPI / E 模組 banner / 六類耗材 con-grid / 耗材熱力矩陣
+ *  · 改為「裝置清單」+「點裝置→下方耗材狀態聯動」兩段
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function AConsumables(_props: { onSelect: (fid: string) => void }) {
+  const detail = FIELD_DETAIL_WANG  // 用 SH-2841 王婉真場域為示範
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>(detail.devices[0]?.id ?? '')
+  const selectedDevice = detail.devices.find((d) => d.id === selectedDeviceId) ?? detail.devices[0]
 
-  const stageKeys: Array<'i' | 'n' | 'w' | 'r'> = ['i', 'n', 'w', 'r']
+  // 依裝置 uptimePct 推導該裝置的耗材剩餘 %(uptime 高 → 磨耗快 → 剩餘低)
+  // 0% uptime(離線/未使用)→ 基線 × 1.6;100% uptime → 基線 × 0.6
+  const deviceWearFactor = (uptimePct: number): number =>
+    1.6 - (uptimePct / 100) * 1.0
+
+  const devConsumables = detail.consumables.map((c) => {
+    const factor = deviceWearFactor(selectedDevice.uptimePct)
+    const pct = Math.max(2, Math.min(100, Math.round(c.pct * factor)))
+    const daysLeft = Math.max(0, Math.round(c.daysLeft * factor))
+    let status: typeof c.status = 'ok'
+    if (pct < 20) status = 'critical'
+    else if (pct < 30) status = 'soon'
+    else if (pct < 50) status = 'watch'
+    return { ...c, pct, daysLeft, status }
+  })
+
+  const onlineCount = detail.devices.filter((d) => d.status === 'online').length
+  const alertCount = detail.devices.filter((d) => d.status === 'alert').length
+  const offlineCount = detail.devices.filter((d) => d.status === 'offline').length
 
   return (
-    <>
-      {/* 四階段 KPI */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <div className="kpi red">
-          <div className="lbl">
-            <span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--as-danger)', borderRadius: 2, marginRight: 6, verticalAlign: 'middle' }}></span>
-            立即處理 (&lt; 20%)
+    <div {...batchAttrs('A.個人.耗材庫存')}>
+      {/* ── 裝置清單(可點選,選中後下方耗材狀態聯動) ─────── */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="ch">
+          <div>
+            <h3>裝置清單 · {detail.devices.length} 台</h3>
+            <div className="csub">
+              {onlineCount} 線上 · {alertCount} 警示 · {offlineCount} 離線 · 點任一台 → 下方顯示該裝置濾網狀態
+            </div>
           </div>
-          <div className="val">{tot.i}<span className="u">台</span></div>
-          <div className="ft">
-            <span className="delta dn"><Icon name="bell" size={11} />觸發 E 模組</span>
-            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{(tot.i / all * 100).toFixed(1)}%</span>
-          </div>
+          <span className="chip">場域 {detail.fid} · {detail.memberName}</span>
         </div>
-        <div className="kpi orange">
-          <div className="lbl">
-            <span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--as-warning)', borderRadius: 2, marginRight: 6, verticalAlign: 'middle' }}></span>
-            近期處理 (20–30%)
-          </div>
-          <div className="val">{tot.n}<span className="u">台</span></div>
-          <div className="ft">
-            <span className="delta"><Icon name="cal" size={11} />3 工作日內</span>
-            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{(tot.n / all * 100).toFixed(1)}%</span>
-          </div>
-        </div>
-        <div className="kpi purple">
-          <div className="lbl">
-            <span style={{ display: 'inline-block', width: 8, height: 8, background: '#4F46E5', borderRadius: 2, marginRight: 6, verticalAlign: 'middle' }}></span>
-            持續觀察 (30–50%)
-          </div>
-          <div className="val">{tot.w}<span className="u">台</span></div>
-          <div className="ft">
-            <span className="delta"><Icon name="eye" size={11} />本月內</span>
-            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{(tot.w / all * 100).toFixed(1)}%</span>
-          </div>
-        </div>
-        <div className="kpi green">
-          <div className="lbl">
-            <span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--as-mute-2)', borderRadius: 2, marginRight: 6, verticalAlign: 'middle' }}></span>
-            更換備料 (≥ 50%)
-          </div>
-          <div className="val">{tot.r}<span className="u">台</span></div>
-          <div className="ft">
-            <span className="delta up"><Icon name="check" size={11} />正常</span>
-            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{(tot.r / all * 100).toFixed(1)}%</span>
-          </div>
+        <div className="dt-wrap" style={{ border: 0 }}>
+          <table className="dt">
+            <thead>
+              <tr>
+                <th>機台</th>
+                <th>型號 / 位置</th>
+                <th>狀態</th>
+                <th>今日</th>
+                <th>在線率</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.devices.map((dev) => {
+                const isSelected = dev.id === selectedDeviceId
+                return (
+                  <tr
+                    key={dev.id}
+                    onClick={() => setSelectedDeviceId(dev.id)}
+                    style={{
+                      cursor: 'pointer',
+                      background: isSelected ? 'var(--as-primary-tint)' : undefined,
+                    }}
+                    title={isSelected ? '當前裝置' : `查看 ${dev.id} 的濾網狀態`}
+                  >
+                    <td className="mono" style={{ fontSize: 11, fontWeight: isSelected ? 700 : 400 }}>
+                      {isSelected && <span style={{ color: 'var(--as-primary)', marginRight: 4 }}>▸</span>}
+                      {dev.id}
+                    </td>
+                    <td>
+                      <div className="dt-nm">{dev.model}</div>
+                      <div className="dt-sub">{dev.room}</div>
+                    </td>
+                    <td>
+                      <span className="lamp">
+                        <span className={`d ${dev.status === 'online' ? 'g' : dev.status === 'alert' ? 'y' : 'r'}`}></span>
+                        {dev.status === 'online' ? '線上' : dev.status === 'alert' ? '警示' : '離線'}
+                      </span>
+                    </td>
+                    <td className="mono">{dev.hoursToday}h</td>
+                    <td><span className={`pill ${dev.uptimePct >= 80 ? 'g' : dev.uptimePct >= 50 ? 'y' : 'r'}`}>{dev.uptimePct}%</span></td>
+                    <td>
+                      <button
+                        className="rowbtn"
+                        onClick={(e) => { e.stopPropagation(); setSelectedDeviceId(dev.id) }}
+                      >
+                        <Icon name="arrow" size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* AI 跨模組訊號條 */}
-      <div className="alert-banner" style={{ marginTop: 16, background: 'linear-gradient(90deg, #FFF1F0 0%, #FFFBEB 100%)', borderColor: '#FECDD3' }}>
-        <div className="al-ic" style={{ background: 'var(--as-danger)' }}><Icon name="sparkles" size={18} /></div>
-        <div className="al-tx">
-          <div className="al-h"><b>520 台設備耗材剩餘 &lt; 20% (立即處理)</b> · 已自動觸發 E 模組「需主動聯繫名單」27 位會員 · 其中 9 位為高級會員</div>
-          <div className="al-s">推薦下一步:批次派工 + 推送「自動配送耗材」訂閱方案 (歷史接受率 38%，預估月經常性收入 + NT$ 124K)</div>
+      {/* ── 下方:該裝置的 6 類濾網卡(隨選中聯動,維持原版環圖卡) ─────── */}
+      {/* 標題列 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 12, padding: '0 4px' }}>
+        <div style={{ fontSize: 13, color: 'var(--as-ink-2)' }}>
+          當前裝置 ·
+          <span style={{ color: 'var(--as-primary)', fontFamily: 'var(--f-mono)', fontWeight: 700, marginLeft: 6 }}>{selectedDevice.id}</span>
+          <span style={{ color: 'var(--as-mute)', marginLeft: 6 }}>
+            {selectedDevice.model} · {selectedDevice.room} · 在線率 {selectedDevice.uptimePct}% · 依此推導磨耗
+          </span>
         </div>
-        <div className="al-ac">
-          <button className="btn"><Icon name="download" size={13} />匯出名單</button>
-          <button className="btn primary"><Icon name="headset" size={13} />批次派工 + 通知</button>
+        <div style={{ display: 'flex', gap: 6, fontSize: 11, color: 'var(--as-mute)' }}>
+          <span style={{ color: 'var(--as-danger)', fontFamily: 'var(--f-mono)' }}>● {devConsumables.filter(c => c.status === 'critical').length}</span> 立即
+          <span style={{ color: 'var(--as-warning)', fontFamily: 'var(--f-mono)' }}>● {devConsumables.filter(c => c.status === 'soon').length}</span> 近期
+          <span style={{ color: '#4F46E5', fontFamily: 'var(--f-mono)' }}>● {devConsumables.filter(c => c.status === 'watch').length}</span> 觀察
         </div>
       </div>
 
-      {/* 六類耗材卡 */}
+      {/* 6 類耗材環圖卡(con-grid · 維持原 PRE-FILTER / ECF·L / ECF·R / HEPA / PLASMA / UV-C 樣式) */}
       <div className="con-grid">
         {CONSUMABLE_CATS.map((c) => {
-          const t = tone(c.avg)
+          // 依該裝置在線率縮放此類耗材的平均剩餘 %
+          const factor = deviceWearFactor(selectedDevice.uptimePct)
+          const avg = Math.max(2, Math.min(100, Math.round(c.avg * factor)))
+          const t = tone(avg)
+          // 4 階段分布也按 factor 重新分配(在線率高 → 更多落到立即/近期)
           const total = c.dist.i + c.dist.n + c.dist.w + c.dist.r
+          const shiftPct = (1 - factor) * 0.4  // 0..0.4
+          const newI = Math.round(c.dist.i + total * shiftPct * 0.5)
+          const newN = Math.round(c.dist.n + total * shiftPct * 0.3)
+          const newR = Math.max(0, Math.round(c.dist.r - total * shiftPct * 0.5))
+          const newW = Math.max(0, total - newI - newN - newR)
+          const dist = { i: newI, n: newN, w: newW, r: newR }
+
           return (
             <div className="con-card" key={c.k}>
               <div className="con-h">
@@ -1116,22 +1315,22 @@ function AConsumables({ onSelect }: { onSelect: (fid: string) => void }) {
                 <svg viewBox="0 0 80 80" width="100" height="100">
                   <circle cx="40" cy="40" r="34" fill="none" stroke="var(--as-line-2)" strokeWidth="6" />
                   <circle cx="40" cy="40" r="34" fill="none" stroke={t.clr} strokeWidth="6" strokeLinecap="round"
-                    strokeDasharray={`${c.avg / 100 * 2 * Math.PI * 34} 999`}
+                    strokeDasharray={`${avg / 100 * 2 * Math.PI * 34} 999`}
                     transform="rotate(-90 40 40)" />
-                  <text x="40" y="42" textAnchor="middle" fontSize="20" fontWeight="700" fill="var(--as-ink)" fontFamily="var(--f-mono)">{c.avg}</text>
+                  <text x="40" y="42" textAnchor="middle" fontSize="20" fontWeight="700" fill="var(--as-ink)" fontFamily="var(--f-mono)">{avg}</text>
                   <text x="40" y="55" textAnchor="middle" fontSize="9" fill="var(--as-mute)">% 平均</text>
                 </svg>
                 <div className="con-tone" style={{ background: t.bg, color: t.clr }}>{t.lbl}</div>
               </div>
               <div className="con-dist">
-                <div className="con-dr"><span className="d" style={{ background: 'var(--as-danger)' }}></span><span className="l">立即</span><span className="v">{c.dist.i}</span></div>
-                <div className="con-dr"><span className="d" style={{ background: 'var(--as-warning)' }}></span><span className="l">近期</span><span className="v">{c.dist.n}</span></div>
-                <div className="con-dr"><span className="d" style={{ background: '#4F46E5' }}></span><span className="l">觀察</span><span className="v">{c.dist.w}</span></div>
-                <div className="con-dr"><span className="d" style={{ background: 'var(--as-mute-2)' }}></span><span className="l">備料</span><span className="v">{c.dist.r}</span></div>
+                <div className="con-dr"><span className="d" style={{ background: 'var(--as-danger)' }}></span><span className="l">立即</span><span className="v">{dist.i}</span></div>
+                <div className="con-dr"><span className="d" style={{ background: 'var(--as-warning)' }}></span><span className="l">近期</span><span className="v">{dist.n}</span></div>
+                <div className="con-dr"><span className="d" style={{ background: '#4F46E5' }}></span><span className="l">觀察</span><span className="v">{dist.w}</span></div>
+                <div className="con-dr"><span className="d" style={{ background: 'var(--as-mute-2)' }}></span><span className="l">備料</span><span className="v">{dist.r}</span></div>
               </div>
               <div className="con-stack">
-                {stageKeys.map((s) => {
-                  const v = c.dist[s]
+                {(['i', 'n', 'w', 'r'] as const).map((s) => {
+                  const v = dist[s]
                   const bg = s === 'i' ? 'var(--as-danger)' : s === 'n' ? 'var(--as-warning)' : s === 'w' ? '#4F46E5' : 'var(--as-mute-2)'
                   return <div key={s} style={{ width: `${v / total * 100}%`, background: bg, height: '100%' }}></div>
                 })}
@@ -1141,139 +1340,130 @@ function AConsumables({ onSelect }: { onSelect: (fid: string) => void }) {
         })}
       </div>
 
-      {/* 耗材熱力矩陣 */}
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="ch">
-          <div>
-            <h3>★ 需立即處理裝置 — 耗材熱力矩陣</h3>
-            <div className="csub">六類耗材 × 個別裝置 · 紅色 &lt; 20% (立即) · 黃 &lt; 30% (近期) · 藍 &lt; 50% (觀察)</div>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--as-mute)', display: 'flex', gap: 12 }}>
-            <span><b style={{ color: 'var(--as-danger)', fontFamily: 'var(--f-mono)' }}>● 18</b> 立即處理 (今日)</span>
-            <span><b style={{ color: 'var(--as-warning)', fontFamily: 'var(--f-mono)' }}>● 64</b> 近期處理</span>
-          </div>
-        </div>
-        <div className="con-heat">
-          <div className="con-heat-head">
-            <div className="hcell mute">會員 / 場域 / 裝置</div>
-            <div className="hcell">前置</div>
-            <div className="hcell">ECF·L</div>
-            <div className="hcell">ECF·R</div>
-            <div className="hcell">HEPA</div>
-            <div className="hcell">電漿</div>
-            <div className="hcell">UV</div>
-            <div className="hcell mute">逾期</div>
-            <div className="hcell mute">下一步</div>
-          </div>
-          {URGENT_DEVICES.map((u) => {
-            const fid = URGENT_DEVICE_TO_FIELD[u.mid]
-            return (
-              <div
-                className="con-heat-r"
-                key={u.mid}
-                style={fid ? { cursor: 'pointer' } : undefined}
-                onClick={() => fid && onSelect(fid)}
-              >
-                <div className="hwho">
-                  <div className={`av ${u.tier === 'g' ? 'gold' : ''}`}>{u.nm[0]}</div>
-                  <div>
-                    <div className="hnm">{u.nm}<span className="hid">{u.mid}</span></div>
-                    <div className="haddr">{u.addr} · <span className="mono">{u.dev}</span></div>
-                  </div>
-                </div>
-                {(['pre', 'ecfL', 'ecfR', 'hepa', 'plasma', 'uv'] as const).map((k) => {
-                  const v = u.vals[k]
-                  const t = tone(v)
-                  return (
-                    <div className={`hcell-v ${t.cls}`} key={k} style={{ background: t.bg, color: t.clr }}>
-                      <div className="vv">{v}<span className="pp">%</span></div>
-                      <div className="vt">{t.lbl}</div>
-                    </div>
-                  )
-                })}
-                <div className="hdays">
-                  <span className={`pill ${u.sev === 'critical' ? 'r' : u.sev === 'soon' ? 'y' : ''}`}>
-                    {u.sev === 'critical' ? `+${u.days} 天` : u.sev === 'soon' ? `${u.days} 天內` : '本週'}
-                  </span>
-                </div>
-                <div className="hact" onClick={(e) => e.stopPropagation()}>
-                  <button className="rowbtn"><Icon name="phone" size={12} /></button>
-                  <button className="rowbtn"><Icon name="headset" size={12} /></button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--as-line-2)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--as-mute)' }}>
-          <span>顯示前 6 筆 · 共 <b style={{ color: 'var(--as-ink)' }}>27</b> 位會員需主動聯繫</span>
-          <span style={{ color: 'var(--as-cdefg)', cursor: 'pointer' }}>跳至 E 模組 · 完整聯繫名單 →</span>
-        </div>
+      <div style={{ marginTop: 12, padding: 10, background: 'var(--as-bg)', borderRadius: 6, fontSize: 11, color: 'var(--as-mute)' }}>
+        <Icon name="package" size={12} /> <b style={{ color: 'var(--as-ink-2)' }}>聯動規則:</b>
+        上方點選裝置 → 下方 6 類濾網卡依該裝置的在線率推導(在線率越高,平均剩餘 % 越低、立即/近期數量越多)。
       </div>
-    </>
+    </div>
   )
 }
 
 /* ── 水箱管理 ────────────────────────────────────────── */
+/* 水箱管理 tab — 2026-05-29 依 PDF 改成與濾網管理相同結構:
+ *  · 拿掉 5 KPI / P90 警示 banner / 倒水節奏+分位數雙圖 / 異常場域明細表
+ *  · 改為「裝置清單」+「點裝置→下方水箱資料聯動」
+ */
 function ATank() {
-  const hourly = [4, 2, 1, 1, 1, 2, 4, 8, 12, 14, 11, 8, 9, 7, 6, 6, 7, 9, 11, 14, 13, 10, 8, 5]
-  const hMax = Math.max(...hourly)
+  const detail = FIELD_DETAIL_WANG  // 用 SH-2841 王婉真場域為示範
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>(detail.devices[0]?.id ?? '')
+  const selectedDevice = detail.devices.find((d) => d.id === selectedDeviceId) ?? detail.devices[0]
 
-  const ABNORMAL = [
-    { sid: 'SH-2841', site: '臺中科技園區', mem: '王淑芬 · 高級', tier: 'g', evt: 32, avg: 28.4, p50: 18, p90: 52, max: 96, trend: 'up', sig: '已觸發 E' },
-    { sid: 'SH-7821', site: '陽明山度假', mem: '陳俊宏 · 高級', tier: 'g', evt: 14, avg: 38.2, p50: 26, p90: 68, max: 124, trend: 'up', sig: '已觸發 E' },
-    { sid: 'SH-1147', site: '新北板橋辦公', mem: '李文君', tier: 'n', evt: 26, avg: 22.1, p50: 16, p90: 38, max: 72, trend: 'flat', sig: '已觸發 E' },
-    { sid: 'SH-5023', site: '臺南安平診所', mem: '林醫師', tier: 'n', evt: 41, avg: 19.8, p50: 14, p90: 31, max: 58, trend: 'down', sig: '監控中' },
-    { sid: 'SH-5611', site: '臺北大安咖啡店', mem: '阿諾義式', tier: 'n', evt: 38, avg: 16.4, p50: 12, p90: 26, max: 48, trend: 'flat', sig: '監控中' },
-  ]
+  // 依裝置 uptimePct 推導該裝置的水箱統計(在線率越高 → 倒水事件越多、平均清除時間越長)
+  const factor = selectedDevice.uptimePct / 100  // 0..1
+  const eventsWeek = Math.round(180 * factor + 8)         // 8 ~ 188 次/週
+  const avgClearH = Number((28 * (1 - factor) + 6 * factor).toFixed(1))  // 6 ~ 28 h
+  const p50 = Number((avgClearH * 0.7).toFixed(1))
+  const p90 = Number((avgClearH * 2.1).toFixed(1))
+  const maxH = Math.round(p90 * 4.2)
+  const triggered = p90 > 24  // P90 > 24h → 觸發 E 模組
+  const onlineCount = detail.devices.filter((d) => d.status === 'online').length
+  const alertCount = detail.devices.filter((d) => d.status === 'alert').length
+  const offlineCount = detail.devices.filter((d) => d.status === 'offline').length
+
+  // 該裝置 24h 倒水節奏(依在線率縮放,離線裝置幾乎 0)
+  const baseHourly = [4, 2, 1, 1, 1, 2, 4, 8, 12, 14, 11, 8, 9, 7, 6, 6, 7, 9, 11, 14, 13, 10, 8, 5]
+  const devHourly = baseHourly.map((v) => Math.round(v * Math.max(0.1, factor)))
+  const hMax = Math.max(...devHourly, 1)
 
   return (
-    <>
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-        <div className="kpi purple">
-          <div className="lbl">本週水滿事件</div>
-          <div className="val">2,841<span className="u">次</span></div>
-          <div className="ft">
-            <span className="delta up"><Icon name="up" size={11} />+8%</span>
-            <Sparkline data={[2600, 2620, 2680, 2700, 2750, 2780, 2810, 2820, 2835, 2841]} color="var(--as-cdefg)" />
+    <div {...batchAttrs('A.個人.水箱管理')}>
+      {/* ── 裝置清單(可點選,選中後下方水箱資料聯動) ─────── */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="ch">
+          <div>
+            <h3>裝置清單 · {detail.devices.length} 台</h3>
+            <div className="csub">
+              {onlineCount} 線上 · {alertCount} 警示 · {offlineCount} 離線 · 點任一台 → 下方顯示該裝置水箱資料
+            </div>
           </div>
+          <span className="chip">場域 {detail.fid} · {detail.memberName}</span>
         </div>
-        <div className="kpi green">
-          <div className="lbl">平均清除時間</div>
-          <div className="val">11.4<span className="u">小時</span></div>
-          <div className="ft">
-            <span className="delta up"><Icon name="down" size={11} />−1.8h</span>
-            <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>目標 ≤ 12h</span>
-          </div>
-        </div>
-        <div className="kpi green">
-          <div className="lbl">P50 中位數</div>
-          <div className="val">8.6<span className="u">h</span></div>
-          <div className="ft"><span style={{ fontSize: 11, color: 'var(--as-success)' }}>50% 用戶 ≤ 8.6h</span></div>
-        </div>
-        <div className="kpi orange">
-          <div className="lbl">P90 (★ 觸發閾值)</div>
-          <div className="val">24.8<span className="u">h</span></div>
-          <div className="ft"><span style={{ fontSize: 11, color: 'var(--as-warning)' }}>P90 &gt; 24h → 觸發 E</span></div>
-        </div>
-        <div className="kpi red">
-          <div className="lbl">最長 (Max)</div>
-          <div className="val">124<span className="u">h</span></div>
-          <div className="ft"><span style={{ fontSize: 11, color: 'var(--as-danger)' }}>陽明山度假 · 5 天 4 小時</span></div>
+        <div className="dt-wrap" style={{ border: 0 }}>
+          <table className="dt">
+            <thead>
+              <tr>
+                <th>機台</th>
+                <th>型號 / 位置</th>
+                <th>狀態</th>
+                <th>今日</th>
+                <th>在線率</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.devices.map((dev) => {
+                const isSelected = dev.id === selectedDeviceId
+                return (
+                  <tr
+                    key={dev.id}
+                    onClick={() => setSelectedDeviceId(dev.id)}
+                    style={{
+                      cursor: 'pointer',
+                      background: isSelected ? 'var(--as-primary-tint)' : undefined,
+                    }}
+                    title={isSelected ? '當前裝置' : `查看 ${dev.id} 的水箱資料`}
+                  >
+                    <td className="mono" style={{ fontSize: 11, fontWeight: isSelected ? 700 : 400 }}>
+                      {isSelected && <span style={{ color: 'var(--as-primary)', marginRight: 4 }}>▸</span>}
+                      {dev.id}
+                    </td>
+                    <td>
+                      <div className="dt-nm">{dev.model}</div>
+                      <div className="dt-sub">{dev.room}</div>
+                    </td>
+                    <td>
+                      <span className="lamp">
+                        <span className={`d ${dev.status === 'online' ? 'g' : dev.status === 'alert' ? 'y' : 'r'}`}></span>
+                        {dev.status === 'online' ? '線上' : dev.status === 'alert' ? '警示' : '離線'}
+                      </span>
+                    </td>
+                    <td className="mono">{dev.hoursToday}h</td>
+                    <td><span className={`pill ${dev.uptimePct >= 80 ? 'g' : dev.uptimePct >= 50 ? 'y' : 'r'}`}>{dev.uptimePct}%</span></td>
+                    <td>
+                      <button
+                        className="rowbtn"
+                        onClick={(e) => { e.stopPropagation(); setSelectedDeviceId(dev.id) }}
+                      >
+                        <Icon name="arrow" size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div className="alert-banner" style={{ marginTop: 16, background: 'linear-gradient(90deg, #FFFBEB 0%, #FFFFFF 100%)', borderColor: '#FED7AA' }}>
-        <div className="al-ic" style={{ background: 'var(--as-warning)' }}><Icon name="bell" size={18} /></div>
-        <div className="al-tx">
-          <div className="al-h"><b>14 個場域 P90 &gt; 24 小時</b> · 已觸發 E 模組主動聯繫 · 包含 4 位高級會員</div>
-          <div className="al-s">疑似原因:① 除濕需求過高 (建議升級機型) ② 用戶習慣 (推送提醒) ③ 設備異常 (派工檢查)</div>
+      {/* ── 下方:該裝置的水箱資料(隨選中聯動,維持原雙欄圖表) ─────── */}
+      {/* 標題列 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4, padding: '0 4px' }}>
+        <div style={{ fontSize: 13, color: 'var(--as-ink-2)' }}>
+          當前裝置 ·
+          <span style={{ color: 'var(--as-primary)', fontFamily: 'var(--f-mono)', fontWeight: 700, marginLeft: 6 }}>{selectedDevice.id}</span>
+          <span style={{ color: 'var(--as-mute)', marginLeft: 6 }}>
+            {selectedDevice.model} · {selectedDevice.room} · 在線率 {selectedDevice.uptimePct}%
+          </span>
         </div>
-        <div className="al-ac">
-          <button className="btn primary"><Icon name="headset" size={13} />批次派工 + 通知</button>
-        </div>
+        {triggered && (
+          <span style={{ fontSize: 11, color: 'var(--as-danger)', fontWeight: 700, padding: '3px 10px', background: 'var(--as-danger-tint)', border: '1px solid var(--as-danger)', borderRadius: 999 }}>
+            ★ P90 &gt; 24h · 已觸發 E
+          </span>
+        )}
       </div>
 
-      <div className="two-col" style={{ marginTop: 16 }}>
+      <div className="two-col" style={{ marginTop: 12 }}>
+        {/* 倒水節奏 · 24 小時分布(維持原版) */}
         <div className="card">
           <div className="ch">
             <div>
@@ -1282,14 +1472,14 @@ function ATank() {
             </div>
           </div>
           <div className="tank-24h">
-            {hourly.map((v, i) => {
+            {devHourly.map((v, i) => {
               const isWeekendPeak = (i === 10 || i === 11 || i === 14 || i === 15)
               return (
                 <div className="t24" key={i}>
                   <div className="t24-b" style={{
                     height: `${v / hMax * 120}px`,
                     background: isWeekendPeak ? 'var(--as-cdefg)' : 'var(--as-primary)',
-                    opacity: isWeekendPeak ? 0.55 : 1
+                    opacity: isWeekendPeak ? 0.55 : 1,
                   }}></div>
                   {(i % 3 === 0) && <div className="t24-l">{String(i).padStart(2, '0')}</div>}
                 </div>
@@ -1299,16 +1489,18 @@ function ATank() {
           <div className="tank-week">
             <div className="twr">
               <span className="lbl">工作日平均</span>
-              <span className="ev">94 次/日</span>
-              <span className="dur">11.2 h 平均清除</span>
+              <span className="ev">{Math.round(eventsWeek * 0.62)} 次/日</span>
+              <span className="dur">{avgClearH} h 平均清除</span>
             </div>
             <div className="twr">
               <span className="lbl">週末平均</span>
-              <span className="ev">62 次/日</span>
-              <span className="dur">14.8 h 平均清除</span>
+              <span className="ev">{Math.round(eventsWeek * 0.38)} 次/日</span>
+              <span className="dur">{(avgClearH * 1.3).toFixed(1)} h 平均清除</span>
             </div>
           </div>
         </div>
+
+        {/* 清除時間分位數 · 30 天(維持原版) */}
         <div className="card">
           <div className="ch">
             <div>
@@ -1317,86 +1509,43 @@ function ATank() {
             </div>
           </div>
           <div className="tank-pct">
-            {[
-              { k: '最快', v: 0.4, pct: 0.4 / 124 * 100, c: 'var(--as-success)', lab: '0.4 h' },
-              { k: 'P25', v: 4.2, pct: 4.2 / 124 * 100, c: 'var(--as-success)', lab: '4.2 h' },
-              { k: 'P50 中位', v: 8.6, pct: 8.6 / 124 * 100, c: 'var(--as-success)', lab: '8.6 h' },
-              { k: '平均', v: 11.4, pct: 11.4 / 124 * 100, c: 'var(--as-cdefg)', lab: '11.4 h' },
-              { k: 'P75', v: 16.8, pct: 16.8 / 124 * 100, c: 'var(--as-cdefg)', lab: '16.8 h' },
-              { k: 'P90', v: 24.8, pct: 24.8 / 124 * 100, c: 'var(--as-warning)', lab: '24.8 h ⚠' },
-              { k: '最長', v: 124, pct: 100, c: 'var(--as-danger)', lab: '124 h' },
-            ].map((p) => (
-              <div className="tpr" key={p.k}>
-                <div className="tpk">{p.k}</div>
-                <div className="tpb">
-                  <div className="tpf" style={{ width: `${p.pct}%`, background: p.c }}></div>
-                  <div className="tp-line" style={{ left: `${24 / 124 * 100}%` }}></div>
+            {(() => {
+              const denom = Math.max(maxH, 24)
+              const rows = [
+                { k: '最快',    v: Number((avgClearH * 0.04).toFixed(1)), c: 'var(--as-success)' },
+                { k: 'P25',    v: Number((avgClearH * 0.37).toFixed(1)), c: 'var(--as-success)' },
+                { k: 'P50 中位', v: p50,                                  c: 'var(--as-success)' },
+                { k: '平均',    v: avgClearH,                             c: 'var(--as-cdefg)' },
+                { k: 'P75',    v: Number((avgClearH * 1.47).toFixed(1)), c: 'var(--as-cdefg)' },
+                { k: 'P90',    v: p90,                                    c: triggered ? 'var(--as-danger)' : 'var(--as-warning)' },
+                { k: '最長',    v: maxH,                                  c: 'var(--as-danger)' },
+              ]
+              return rows.map((p) => (
+                <div className="tpr" key={p.k}>
+                  <div className="tpk">{p.k}</div>
+                  <div className="tpb">
+                    <div className="tpf" style={{ width: `${Math.min(100, p.v / denom * 100)}%`, background: p.c }}></div>
+                    <div className="tp-line" style={{ left: `${Math.min(100, 24 / denom * 100)}%` }}></div>
+                  </div>
+                  <div className="tpv mono">{p.v} h{p.k === 'P90' && triggered ? ' ⚠' : ''}</div>
                 </div>
-                <div className="tpv mono">{p.lab}</div>
-              </div>
-            ))}
+              ))
+            })()}
           </div>
         </div>
       </div>
 
-      {/* 異常場域表 */}
-      <div className="dt-wrap" style={{ marginTop: 16 }}>
-        <table className="dt">
-          <thead>
-            <tr>
-              <th>場域</th>
-              <th>會員</th>
-              <th>事件 (週)</th>
-              <th>平均</th>
-              <th>P50</th>
-              <th>P90 ★</th>
-              <th>最長</th>
-              <th>趨勢</th>
-              <th>狀態</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {ABNORMAL.map((a) => (
-              <tr key={a.sid}>
-                <td>
-                  <div className="dt-nm">{a.site}</div>
-                  <div className="dt-sub mono">{a.sid}</div>
-                </td>
-                <td>{a.mem}</td>
-                <td className="mono">{a.evt}</td>
-                <td className="mono">{a.avg} h</td>
-                <td className="mono">{a.p50} h</td>
-                <td className="mono">
-                  <span className={`pill ${a.p90 > 24 ? 'r' : a.p90 > 12 ? 'y' : 'g'}`}>{a.p90} h</span>
-                </td>
-                <td className="mono">{a.max} h</td>
-                <td>
-                  {a.trend === 'up'
-                    ? <span style={{ color: 'var(--as-danger)' }}>▲ 惡化</span>
-                    : a.trend === 'down'
-                    ? <span style={{ color: 'var(--as-success)' }}>▼ 改善</span>
-                    : <span style={{ color: 'var(--as-mute)' }}>— 持平</span>}
-                </td>
-                <td><span className={`pill ${a.sig.includes('觸發') ? 'r' : 'y'}`}>{a.sig}</span></td>
-                <td><button className="rowbtn"><Icon name="arrow" size={12} /></button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ marginTop: 12, padding: 10, background: 'var(--as-bg)', borderRadius: 6, fontSize: 11, color: 'var(--as-mute)' }}>
+        <Icon name="drop" size={12} /> <b style={{ color: 'var(--as-ink-2)' }}>聯動規則:</b>
+        上方點選裝置 → 下方雙圖依該裝置的在線率推導(在線率越高,事件越密、清除時間越長);P90 &gt; 24h 自動觸發 E 模組主動聯繫。
       </div>
-    </>
+    </div>
   )
 }
 
 /* ── 場域詳情 (個人層 · 場域 360°) ──────────────────── */
 
-const CONSUMABLE_STATUS_META: Record<FieldDetail['consumables'][number]['status'], { lbl: string; cls: 'r' | 'y' | 'g'; clr: string; bg: string }> = {
-  critical: { lbl: '立即處理', cls: 'r', clr: 'var(--as-danger)',  bg: '#FEE4E2' },
-  soon:     { lbl: '7-30 天', cls: 'y', clr: '#CA8A04',           bg: '#FEF3C7' },
-  watch:    { lbl: '本季', cls: 'y', clr: '#4F46E5',              bg: '#EEF0FF' },
-  ok:       { lbl: '正常', cls: 'g', clr: 'var(--as-success)',    bg: '#DCFCE7' },
-}
+// CONSUMABLE_STATUS_META 已隨「場域詳情·耗材健康度」雙欄拿掉而移除(2026-05-29)
 
 const TIMELINE_KIND_META: Record<FieldDetail['timeline'][number]['kind'], { icon: string; clr: string; lbl: string }> = {
   alarm:   { icon: 'bell',            clr: 'var(--as-danger)',  lbl: '警報' },
@@ -1554,6 +1703,63 @@ function WeekUsageHeatmap({ detail }: { detail: FieldDetail }) {
   )
 }
 
+/* ── 除溼運作熱力圖(2026-05-29 新增,依 PDF,淡藍色表示有啟動除濕功能) ───── */
+function WeekDehumidHeatmap({ detail }: { detail: FieldDetail }) {
+  const days = ['日', '一', '二', '三', '四', '五', '六']
+  // 4 階淡藍色:關閉(灰) / 微弱 / 中等 / 強除濕
+  const dehumidColors = ['#F3F4F6', '#DBEAFE', '#93C5FD', '#3B82F6']
+  // 由使用節奏推導:強度 ≥ 2 且該時段為高濕度時段(下午/夜間)時啟動除濕
+  // mock 推測:使用強度 v ≥ 2 在 09:00–11:00 與 18:00–23:00 時段啟動除濕
+  const isWetWindow = (h: number) => (h >= 9 && h <= 11) || (h >= 18 && h <= 23)
+  const dehumidIntensity = (v: number, h: number): number => {
+    if (v === 0) return 0
+    if (!isWetWindow(h)) return v >= 3 ? 1 : 0
+    if (v === 1) return 1
+    if (v === 2) return 2
+    return 3
+  }
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '32px repeat(24, 1fr)', gap: 2, fontFamily: 'var(--f-mono)', fontSize: 9 }}>
+        <div></div>
+        {[...Array(24)].map((_, h) => (
+          <div key={h} style={{ textAlign: 'center', color: 'var(--as-mute)' }}>
+            {h % 3 === 0 ? `${h}` : ''}
+          </div>
+        ))}
+        {detail.weekUsage.map((row, di) => (
+          <Fragment key={di}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6, color: 'var(--as-mute)' }}>週{days[di]}</div>
+            {row.map((v, hi) => {
+              const lvl = dehumidIntensity(v, hi)
+              const lvlLabel = lvl === 0 ? '未啟動' : lvl === 1 ? '微弱' : lvl === 2 ? '中等' : '強除濕'
+              return (
+                <div
+                  key={hi}
+                  title={`週${days[di]} ${hi}:00 · ${lvlLabel}`}
+                  style={{ height: 18, background: dehumidColors[lvl], borderRadius: 2 }}
+                ></div>
+              )
+            })}
+          </Fragment>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, fontSize: 10, color: 'var(--as-mute)' }}>
+        <span>除濕運作</span>
+        {dehumidColors.map((c, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 12, height: 12, background: c, borderRadius: 2, display: 'inline-block' }}></span>
+            {i === 0 ? '未啟動' : i === 1 ? '微弱' : i === 2 ? '中等' : '強除濕'}
+          </span>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, padding: 8, background: '#EFF6FF', borderRadius: 6, fontSize: 11, color: 'var(--as-ink-2)' }}>
+        <Icon name="drop" size={12} /> <b>除濕高峰</b> · 早晨 09:00–11:00、夜間 18:00–23:00(濕度 &gt; 70% 自動啟動);白天工作時段以送風為主。
+      </div>
+    </div>
+  )
+}
+
 function ALocationDetail({
   fieldId,
   onBackToList,
@@ -1578,7 +1784,7 @@ function ALocationDetail({
   return (
     <>
       {/* ── Hero 場域識別卡 ───────────────────── */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }} {...batchAttrs('A.個人.場域詳情')}>
         <div style={{ background: `linear-gradient(135deg, ${catMeta.color}18 0%, ${catMeta.color}08 60%, #fff 100%)`, padding: 18, position: 'relative' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
             {/* 左:基本識別 */}
@@ -1674,10 +1880,10 @@ function ALocationDetail({
           </div>
         </div>
         <div className="kpi purple">
-          <div className="lbl">體感舒適</div>
-          <div className="val" style={{ fontSize: 22 }}>{d.temp}°C<span className="u" style={{ fontSize: 10 }}> / {d.humidity}%</span></div>
+          <div className="lbl">空氣濕度 · 平均相對</div>
+          <div className="val">{d.humidity}<span className="u">%</span></div>
           <div className="ft">
-            <span className="delta">{d.comfort}</span>
+            <span className="delta">{d.comfort} · 室溫 {d.temp}°C</span>
           </div>
         </div>
         <div className="kpi green">
@@ -1745,80 +1951,18 @@ function ALocationDetail({
         <WeekUsageHeatmap detail={d} />
       </div>
 
-      {/* ── 設備清單 + 耗材表 ─────────────────── */}
-      <div className="two-col" style={{ marginTop: 16 }}>
-        <div className="card">
-          <div className="ch">
-            <div>
-              <h3>設備清單 · {d.devices.length} 台</h3>
-              <div className="csub">{d.onlineDevices} 台線上 / {d.totalDevices - d.onlineDevices} 台離線</div>
-            </div>
-          </div>
-          <div className="dt-wrap" style={{ border: 0 }}>
-            <table className="dt">
-              <thead>
-                <tr><th>機台</th><th>型號 / 位置</th><th>狀態</th><th>今日</th><th>在線率</th></tr>
-              </thead>
-              <tbody>
-                {d.devices.map((dev) => (
-                  <tr key={dev.id}>
-                    <td className="mono" style={{ fontSize: 11 }}>{dev.id}</td>
-                    <td>
-                      <div className="dt-nm">{dev.model}</div>
-                      <div className="dt-sub">{dev.room}</div>
-                    </td>
-                    <td>
-                      <span className="lamp">
-                        <span className={`d ${dev.status === 'online' ? 'g' : dev.status === 'alert' ? 'y' : 'r'}`}></span>
-                        {dev.status === 'online' ? '線上' : dev.status === 'alert' ? '警示' : '離線'}
-                      </span>
-                    </td>
-                    <td className="mono">{dev.hoursToday}h</td>
-                    <td><span className={`pill ${dev.uptimePct >= 80 ? 'g' : dev.uptimePct >= 50 ? 'y' : 'r'}`}>{dev.uptimePct}%</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* ── 24h × 7 天 除溼運作熱力圖(2026-05-29 依 PDF 新增,放在使用節奏圖下方) ─── */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="ch">
+          <div>
+            <h3>除溼運作熱力圖 · 24h × 7 天</h3>
+            <div className="csub">淡藍色表示有啟動除濕功能 · 對應 ④/⑥ 除濕需求型客戶</div>
           </div>
         </div>
-
-        <div className="card">
-          <div className="ch">
-            <div>
-              <h3>耗材健康度 · 進度條 + 預估到期 + 行動</h3>
-              <div className="csub">{d.consumables.filter((c) => c.status === 'critical').length} 項立即處理 · {d.consumables.filter((c) => c.status === 'soon').length} 項近期處理</div>
-            </div>
-            <button className="btn primary ab" style={{ fontSize: 11 }}>
-              <Icon name="package" size={12} />批次訂購
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {d.consumables.map((c) => {
-              const meta = CONSUMABLE_STATUS_META[c.status]
-              return (
-                <div key={c.k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: meta.bg, borderRadius: 6 }}>
-                  <div style={{ width: 80, flexShrink: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: meta.clr }}>{c.nm}</div>
-                    <div style={{ fontSize: 9, color: 'var(--as-mute)' }}>{c.life}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ height: 10, background: '#fff', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--as-line-2)' }}>
-                      <div style={{ width: `${c.pct}%`, height: '100%', background: meta.clr }}></div>
-                    </div>
-                  </div>
-                  <div style={{ width: 80, textAlign: 'right', flexShrink: 0 }}>
-                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: meta.clr }}>{c.pct}%</span>
-                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>≈ {c.daysLeft} 天</div>
-                  </div>
-                  <button className="btn" style={{ fontSize: 10, padding: '3px 8px', flexShrink: 0 }}>
-                    {c.status === 'critical' ? '立即訂購' : c.status === 'soon' ? '加入提醒' : '—'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <WeekDehumidHeatmap detail={d} />
       </div>
+
+      {/* 設備清單 + 耗材健康度雙欄區塊已依 2026-05-29 PDF 拿掉 */}
 
       {/* ── 時間軸 + AI 建議 ───────────────────── */}
       <div className="two-col" style={{ marginTop: 16 }}>
@@ -1919,6 +2063,8 @@ export function ModuleA() {
   // 個人層的 sub-tab 與當前場域 id 提到 root,讓整體層 row 點擊可以直接跳場域詳情
   const [personalSubTab, setPersonalSubTab] = useState<APersonalSub>('detail')
   const [currentFieldId, setCurrentFieldId] = useState<string>('SH-2841')
+  // 場域清單類別篩選(由整體層 upsell 卡片點擊帶入)
+  const [catFilter, setCatFilter] = useState<CatId | null>(null)
 
   const openDetailById = (fid: string) => {
     setCurrentFieldId(fid)
@@ -1926,10 +2072,17 @@ export function ModuleA() {
     setTab('personal')
   }
 
+  /** 從整體層 upsell 卡片進入個人層「場域清單」並鎖定類別 */
+  const openCategoryList = (cid: CatId) => {
+    setCatFilter(cid)
+    setPersonalSubTab('list')
+    setTab('personal')
+  }
+
   const tabs = [
-    { k: 'overview', l: '整體層' },
-    { k: 'segments', l: '分群層', n: 3 },
-    { k: 'personal', l: '個人層', n: 1284 },
+    { k: 'overview', l: '整體場域' },
+    { k: 'segments', l: '分類概況' },
+    { k: 'personal', l: '個人場域資訊' },
   ]
 
   return (
@@ -1950,8 +2103,8 @@ export function ModuleA() {
     >
       {tab === 'overview' && (
         <AOverview
-          onJump={() => setTab('segments')}
           onOpenDetail={openDetailById}
+          onJumpListByCategory={openCategoryList}
         />
       )}
       {tab === 'segments' && <ASegments onOpenDetail={openDetailById} />}
@@ -1963,6 +2116,8 @@ export function ModuleA() {
           setCurrentFieldId={setCurrentFieldId}
           onJumpOverview={() => setTab('overview')}
           onJumpSegments={() => setTab('segments')}
+          catFilter={catFilter}
+          setCatFilter={setCatFilter}
         />
       )}
     </PageShell>

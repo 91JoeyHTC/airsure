@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   KANBAN_COLS,
   SLA_BUCKETS,
@@ -19,7 +20,7 @@ import {
 function BoardView() {
   return (
     <>
-      <div className="c-workspace">
+      <div className="c-workspace" {...batchAttrs('C.看板')}>
         <div className="c-sla-strip">
           <h4>SLA 到期分佈 <span className="csub">42 張未結案工單 · 點擊查看</span></h4>
           <div className="c-sla-grid">
@@ -103,7 +104,7 @@ function BoardView() {
 function ListView() {
   return (
     <>
-      <div className="fb">
+      <div className="fb" {...batchAttrs('C.清單')}>
         <span className="chip on">全部<span className="n">42</span></span>
         <span className="chip">P1 緊急<span className="n">5</span></span>
         <span className="chip">P2 一般<span className="n">22</span></span>
@@ -193,7 +194,7 @@ function SlaView() {
   return (
     <>
       {/* 2x3 metric grid */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 16 }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 16 }} {...batchAttrs('C.SLA達成')}>
         <div className="kpi green">
           <div className="lbl">SLA 達成率</div>
           <div className="val">96.4<span className="u">%</span></div>
@@ -297,7 +298,7 @@ function SlaView() {
       </div>
 
       {/* 問題分類熱點 Top 8 */}
-      <div className="card">
+      <div className="card" {...batchAttrs('C.問題分類熱點')}>
         <div className="ch">
           <div><h3>問題分類熱點 Top 8</h3><div className="csub">本月工單 · 依異常代碼歸戶</div></div>
           <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>category · subType</span>
@@ -338,7 +339,7 @@ function IoTKpiView() {
   return (
     <>
       {/* IoT 主動服務 */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('C.IoT主動服務')}>
         <div className="ch">
           <div>
             <h3>IoT 主動服務</h3>
@@ -387,7 +388,7 @@ function IoTKpiView() {
 
       {/* 顧問 KPI vs 客服 KPI */}
       <div className="two-col">
-        <div className="card">
+        <div className="card" {...batchAttrs('C.顧問KPI')}>
           <div className="ch">
             <div>
               <h3>顧問 KPI</h3>
@@ -423,7 +424,7 @@ function IoTKpiView() {
             ))}
           </div>
         </div>
-        <div className="card">
+        <div className="card" {...batchAttrs('C.客服KPI')}>
           <div className="ch">
             <div>
               <h3>客服 KPI</h3>
@@ -468,7 +469,7 @@ function IoTKpiView() {
 function TechView() {
   return (
     <>
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('C.技術人員')}>
         <div className="kpi purple">
           <div className="lbl">技術團隊規模</div>
           <div className="val">18<span className="u">/ 24</span></div>
@@ -589,7 +590,7 @@ export function ModuleC() {
       onTab={setTab}
     >
       {/* KPI cards — always visible above tabs */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('C.KPI')}>
         <div className="kpi purple">
           <div className="lbl">待處理工單</div>
           <div className="val">42<span className="u">張</span></div>

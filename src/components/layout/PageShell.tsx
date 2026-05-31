@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Icon } from '../ui/Icon'
 import { Header } from './Header'
 import { AssistantFAB } from '../ai/AssistantFAB'
+import { BatchModeToggle } from '../ui/BatchModeToggle'
 
 interface Tab {
   k: string
@@ -111,7 +112,10 @@ export function PageShell({
               <span className={`tk ${tkClass}`}>模組 {tk} · {sub}</span>
               <h1>{title}</h1>
             </div>
-            <div className="acts">{actions}</div>
+            <div className="acts" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <BatchModeToggle />
+              {actions}
+            </div>
           </div>
 
           {tabs && (

@@ -474,10 +474,14 @@
   display: grid;
   grid-template-columns: 14px 1fr auto;
   gap: 12px;
-  padding: 12px 0;
+  padding: 12px 8px;
+  margin: 0 -8px;
   border-bottom: 1px solid var(--as-line-2);
   align-items: center;
+  border-radius: 6px;
+  transition: background 0.12s;
 }
+.contact-list .row:hover { background: var(--as-bg); }
 .contact-list .row:last-child { border-bottom: 0; }
 .contact-list .row .pip {
   width: 8px; height: 8px; border-radius: 50%;
@@ -787,3 +791,123 @@
 .today-ribbon .tlbl .big { font-size: 24px; }
 .today-ribbon .tline .evt { font-size: 11px; height: 18px; padding: 0 9px; }
 .today-ribbon .tline .hr { font-size: 11px; }
+
+/* ─────────────────────────────────────────────────────────
+   施工狀態徽章（8/1 上線批次標示）
+   - 預設隱藏，body[data-batch-mode="on"] 時顯示
+   - 卡片元素加 data-batch="p1|p2|p3" + data-source="#6"
+   - 透過 ::before 浮在卡片右上角；對 .kpi 卡片也支援
+   ───────────────────────────────────────────────────────── */
+[data-batch] { position: relative; }
+
+body[data-batch-mode="on"] [data-batch]::before {
+  content: attr(data-batch-label);
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  line-height: 1.2;
+}
+
+/* P1 第一批 — 綠 */
+body[data-batch-mode="on"] [data-batch="p1"]::before {
+  color: var(--as-success);
+  background: var(--as-success-tint);
+}
+/* P2 第二批 — 黃 */
+body[data-batch-mode="on"] [data-batch="p2"]::before {
+  color: #A16207;
+  background: var(--as-warning-tint);
+  border-color: var(--as-warning);
+}
+/* P3 先放著 — 灰 */
+body[data-batch-mode="on"] [data-batch="p3"]::before {
+  color: var(--as-mute);
+  background: #F3F4F6;
+  border-color: #D1D5DB;
+}
+/* ⚠ 警示卡：紅框 */
+body[data-batch-mode="on"] [data-batch][data-warn]::after {
+  content: attr(data-warn);
+  position: absolute;
+  top: 8px;
+  right: 78px;
+  z-index: 5;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--as-danger);
+  background: var(--as-danger-tint);
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--as-danger);
+  white-space: nowrap;
+  pointer-events: none;
+  line-height: 1.2;
+}
+
+/* 施工狀態圖例（PageShell 右上） */
+.batch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--as-ink-2);
+  background: #fff;
+  border: 1px solid var(--as-line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+}
+.batch-toggle:hover {
+  border-color: var(--as-ink-2);
+}
+.batch-toggle.on {
+  background: var(--as-primary-tint);
+  border-color: var(--as-primary);
+  color: var(--as-primary);
+}
+.batch-toggle .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--as-mute);
+  display: inline-block;
+}
+.batch-toggle.on .dot {
+  background: var(--as-success);
+}
+
+.batch-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--as-ink-2);
+  margin-left: 8px;
+}
+.batch-legend .it {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.batch-legend .pip {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+.batch-legend .pip.p1 { color: var(--as-success); background: var(--as-success-tint); }
+.batch-legend .pip.p2 { color: #A16207; background: var(--as-warning-tint); border-color: var(--as-warning); }
+.batch-legend .pip.p3 { color: var(--as-mute); background: #F3F4F6; border-color: #D1D5DB; }

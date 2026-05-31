@@ -30,10 +30,11 @@ export interface KPI {
 
 export const KPIS_BY_PERSONA: Record<PersonaId, KPI[]> = {
   gm: [
-    { lbl: '今日營收',   val: '847,200', u: 'NT$',    delta: '+12.4%',    dir: 'up',   accent: 'green',  spark: [3, 5, 4, 6, 7, 5, 8, 9, 7, 10] },
-    { lbl: '訂閱續約率', val: '92.8',    u: '%',      delta: '+1.2%',     dir: 'up',   accent: 'green',  spark: [85, 86, 88, 87, 89, 90, 91, 92, 92, 93] },
-    { lbl: '連網機器數量',val: '1,284',  u: '個',     delta: '+8',        dir: 'up',   accent: 'purple', spark: [1200, 1210, 1220, 1240, 1255, 1260, 1270, 1278, 1280, 1284] },
-    { lbl: '需主動聯繫', val: '37',      u: '位會員', delta: '+5 待處理', dir: 'dn',   accent: 'red',    spark: [25, 28, 30, 29, 32, 33, 35, 34, 36, 37] },
+    { lbl: '今日營收',          val: '847,200', u: 'NT$',    delta: '+12.4%',    dir: 'up',   accent: 'green',  spark: [3, 5, 4, 6, 7, 5, 8, 9, 7, 10] },
+    { lbl: '本月營收',          val: '21.4',    u: 'M NT$',  delta: '+8.6% 月增', dir: 'up',  accent: 'green',  spark: [12, 14, 15, 16, 17, 18, 19, 20, 20.5, 21.4] },
+    { lbl: 'Aircare 報告訂閱數',val: '1,842',   u: '位',     delta: '+186 vs 上月', dir: 'up', accent: 'orange', spark: [1200, 1280, 1360, 1440, 1520, 1600, 1656, 1720, 1790, 1842] },
+    { lbl: '連網裝置 · 今日開機率',val: '4,832', u: '台',     delta: '87.5% 開機 · +1.8 pp', dir: 'up', accent: 'purple', spark: [4600, 4640, 4680, 4710, 4740, 4760, 4780, 4800, 4820, 4832] },
+    { lbl: '需主動聯繫',        val: '37',      u: '位會員', delta: '+5 待處理', dir: 'dn',   accent: 'red',    spark: [25, 28, 30, 29, 32, 33, 35, 34, 36, 37] },
   ],
   cs: [
     { lbl: '高風險用戶', val: '23',  u: '位',    delta: '+3',        dir: 'dn',   accent: 'red',    spark: [18, 19, 20, 21, 22, 22, 23, 22, 23, 23] },
@@ -73,17 +74,45 @@ export interface Contact {
   pip: 'high' | 'mid' | 'low'
   who: string
   cid: string
+  /** 撥號用(ICT/tel: 協定) */
+  phone: string
   why: string
   sla: string
   urgent: boolean
+  /** 是否為個人 360° 主示範客戶(王敬梅) */
+  star?: boolean
 }
 
+// CONTACT_LIST · 對齊兩份既有 mock:
+//   1. 王敬梅(C201000272)— Module B 個人 360° 主示範(WANG_PROFILE)
+//   2. MEMBER_MASTER 的 4 筆 outreach !== false 高風險會員(Module E 主動聯繫名單)
+//   why 欄使用 MEMBER_MASTER.trigger;cid 對齊 MEMBER_MASTER.id
 export const CONTACT_LIST: Contact[] = [
-  { pip: 'high', who: '陳先生', cid: 'M-008412', why: '高級會員 · 連續 5 日 PM2.5 超標 且設備使用率 < 20%',   sla: '剩 6 小時', urgent: true  },
-  { pip: 'high', who: '李女士', cid: 'M-007738', why: '訂閱 14 天內到期 · 已多次未開機',                      sla: '今日',      urgent: true  },
-  { pip: 'mid',  who: '王太太', cid: 'M-009203', why: '濾網逾期 18 天 未更換',                                 sla: '24h',       urgent: false },
-  { pip: 'mid',  who: '張先生', cid: 'M-005611', why: '健康諮詢預約逾期未回覆',                               sla: '48h',       urgent: false },
-  { pip: 'mid',  who: '林小姐', cid: 'M-010055', why: '推薦邀請 3 次未成功 · 可主動關心',                     sla: '本週',      urgent: false },
+  // ★ 王敬梅 — Module B 個人 360° 主示範(高敏家庭、4 機型、多年老客戶)
+  { star: true, pip: 'high', who: '王敬梅', cid: 'C201000272', phone: '+886-912-272-001',
+    why: 'E:蛋黃克人 · 多機型老客戶 · 高敏家庭 · 保養頻率偏低',
+    sla: '今日', urgent: true },
+
+  // ─ 以下 4 筆對齊 MEMBER_MASTER(Module E 共用會員主檔)
+  // 陳俊宏 M-008412 · churn 64% · recoverK 184(挽回估值最高)
+  { pip: 'high', who: '陳俊宏', cid: 'M-008412', phone: '+886-912-345-678',
+    why: '設備離線 48h · 使用率 18% · 訂閱即將到期',
+    sla: '剩 6 小時', urgent: true },
+
+  // 黃健宇 M-011204 · churn 72%(機率最高)
+  { pip: 'high', who: '黃健宇', cid: 'M-011204', phone: '+886-922-411-204',
+    why: '使用率驟降 · 未回應 · 訂閱續約風險',
+    sla: '24h', urgent: true },
+
+  // 黃建中 M-006822 · churn 38% · recoverK 92K
+  { pip: 'mid', who: '黃建中', cid: 'M-006822', phone: '+886-933-468-220',
+    why: 'TVOC 異常 · App 30 天未開機',
+    sla: '48h', urgent: false },
+
+  // 楊雅雯 M-010512 · churn 58%
+  { pip: 'mid', who: '楊雅雯', cid: 'M-010512', phone: '+886-955-510-512',
+    why: '訂閱 14 天到期 · 使用驟降',
+    sla: '本週', urgent: false },
 ]
 
 // ── Field table ───────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   FINANCE_RECORDS,
   B_OVERVIEW_JUMP_CARDS,
@@ -219,7 +220,7 @@ function OverallView() {
   return (
     <>
       {/* Overall KPI row */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 16 }}>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 16 }} {...batchAttrs('B.KPI')}>
         <div className="kpi green">
           <div className="lbl">活躍會員</div>
           <div className="val">6,420<span className="u">位</span></div>
@@ -243,7 +244,7 @@ function OverallView() {
       </div>
 
       {/* 生命週期 distribution */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.整體.生命週期分布')}>
         <div className="ch">
           <div><h3>會員生命週期分佈</h3><div className="csub">總計 8,508 位 · 依最後行為日歸類</div></div>
         </div>
@@ -267,7 +268,7 @@ function OverallView() {
       </div>
 
       {/* 新增 vs 流失 chart */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.整體.新增vs流失趨勢')}>
         <div className="ch">
           <div><h3>新增 vs 流失趨勢</h3><div className="csub">近 12 個月 · 月度對比</div></div>
           <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--as-mute)' }}>
@@ -424,7 +425,7 @@ function SegmentView() {
         const xTicks = [0, 100, 200, 300, 400, 500, 600]
         const yTicks = [0, 25, 50, 75, 100]
         return (
-          <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.分群.價值象限散點')}>
             <div className="ch">
               <div><h3>價值象限散點圖</h3><div className="csub">每點代表一位客戶 · X 軸 LTV(NT$ K) · Y 軸 90 天活躍度</div></div>
               <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--as-mute)' }}>
@@ -578,7 +579,7 @@ function SegmentView() {
 
       {/* 2. 生命週期 */}
       {mode === 'lifecycle' && (
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.分群.生命週期')}>
           <div className="ch">
             <div><h3>生命週期階段</h3><div className="csub">客服視角 · 每階段都有明確的下一步</div></div>
           </div>
@@ -623,7 +624,7 @@ function SegmentView() {
 
       {/* 3. 行動優先級 */}
       {mode === 'priority' && (
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.分群.行動優先級')}>
           <div className="ch">
             <div><h3>行動優先級 (今天該打給誰)</h3><div className="csub">客服每日待辦排序 · 從 P0 開始往下做</div></div>
           </div>
@@ -665,7 +666,7 @@ function SegmentView() {
 
       {/* 4. 使用情境 */}
       {mode === 'context' && (
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.分群.使用情境')}>
           <div className="ch">
             <div><h3>使用情境 (家庭組成 / 健康訴求)</h3><div className="csub">服務顧問視角 · 一人可同時有多個標籤</div></div>
           </div>
@@ -697,7 +698,7 @@ function SegmentView() {
 
       {/* 5. 設備結構 */}
       {mode === 'device' && (
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.分群.設備結構')}>
           <div className="ch">
             <div><h3>設備持有結構</h3><div className="csub">服務顧問視角 · 影響續約話術與向上銷售</div></div>
           </div>
@@ -731,7 +732,7 @@ function SegmentView() {
 
       {/* 6. 客戶標籤 */}
       {mode === 'tags' && (
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('B.分群.客戶標籤')}>
           <div className="ch">
             <div><h3>客戶標籤</h3><div className="csub">業務 memo 經語意分析後產出 · 點任一標籤可下鑽到符合客戶</div></div>
             <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>
@@ -787,7 +788,7 @@ function SegmentView() {
       )}
 
       {/* 組合分群 (always shown at bottom) */}
-      <div className="card">
+      <div className="card" {...batchAttrs('B.分群.組合分群')}>
         <div className="ch">
           <div><h3>組合分群 (跨維度疊加)</h3><div className="csub">儲存的常用視圖 · 直接觸發行動</div></div>
           <button
@@ -1154,7 +1155,7 @@ function PersonaView() {
         {subTab === '價值與風險' && (
           <>
             {/* C1 客戶價值卡 + 升降趨勢 */}
-            <div className="card">
+            <div className="card" {...batchAttrs('B.個人.價值與風險')}>
               <div className="ch">
                 <div><h3>客戶價值</h3><div className="csub">累計消費 × 服務次數 × 等級趨勢</div></div>
                 <span className="pill g">{w.identity.tier}</span>
@@ -1298,7 +1299,7 @@ function PersonaView() {
         {subTab === '觸及與商機' && (
           <>
             {/* M1 生命週期 + 命中分群 */}
-            <div className="card">
+            <div className="card" {...batchAttrs('B.個人.觸及與商機')}>
               <div className="ch">
                 <div><h3>生命週期 + 命中分群</h3><div className="csub">行銷命中 {e.marketing.segments.length} 群 · 階段:{e.marketing.lifecycleStage}</div></div>
                 <span className="pill g">{e.marketing.lifecycleStage}</span>
@@ -1419,7 +1420,7 @@ function PersonaView() {
             {/* (跨模組信號已搬到獨立 sub-tab,此處不再重複) */}
 
             {/* ① 聯絡資訊(常駐第一,撥號入口) */}
-            <div className="card">
+            <div className="card" {...batchAttrs('B.個人.聯絡與歷程')}>
               <div className="ch"><div><h3>聯絡資訊</h3><div className="csub">缺項以黃底標示 · 點「補資料」立即補建</div></div></div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--as-line-2)', alignItems: 'center' }}>
@@ -1554,7 +1555,7 @@ function PersonaView() {
         {subTab === '設備與到府' && (
           <>
             {/* E1 設備清單卡(克立淨真實機型 + 濾網規格) */}
-            <div className="card">
+            <div className="card" {...batchAttrs('B.個人.設備與到府')}>
               <div className="ch">
                 <div><h3>設備清單</h3><div className="csub">{w.devices.length} 台克立淨機 · 各機型對應濾網規格</div></div>
               </div>
@@ -1747,7 +1748,7 @@ function PersonaView() {
         {subTab === '居家與畫像' && (
           <>
             {/* H3 保留:居家 KPI */}
-            <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('B.個人.居家與畫像')}>
               <div className="kpi green">
                 <div className="lbl">DHI 健康指數</div>
                 <div className="val">{w.identity.dhi.score}<span className="u">/ 100</span></div>
@@ -1881,7 +1882,7 @@ function PersonaView() {
         {/* ═══ 訂閱、積點與帳務(原訂閱與帳務 + 整合 Module E 積點區塊) ═══ */}
         {subTab === '訂閱、積點與帳務' && (
           <>
-            <div className="card">
+            <div className="card" {...batchAttrs('B.個人.訂閱積點帳務')}>
               <div className="ch">
                 <div><h3>消費結構(公式合計)</h3><div className="csub">銷貨 + 維修 + 匯入 = 總累積</div></div>
                 <span className="pill g">{w.identity.tier}</span>
@@ -2058,7 +2059,7 @@ function PersonaView() {
         {/* ═══ 跨模組信號 (從 Module E 整合過來:王敬梅在 6 個模組的足跡) ═══ */}
         {subTab === '跨模組信號' && (
           <>
-            <div className="card">
+            <div className="card" {...batchAttrs('B.個人.跨模組信號')}>
               <div className="ch">
                 <div><h3>跨模組信號</h3><div className="csub">這位用戶在 6 個模組的足跡 · 點任一卡跳對應模組</div></div>
                 <span className="pill b">{e.crossSignals.length} 個訊號</span>

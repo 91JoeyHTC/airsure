@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   MEMBER_KPIS,
   DAILY_CHANNELS,
@@ -25,7 +26,7 @@ function EDaily() {
   return (
     <>
       {/* 3-channel daily ops cards */}
-      <div className="ed-channels" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 16 }}>
+      <div className="ed-channels" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 16 }} {...batchAttrs('E.日常通道')}>
         {DAILY_CHANNELS.map(ch => (
           <div className="card" key={ch.k} style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--as-line-2)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -54,7 +55,7 @@ function EDaily() {
       </div>
 
       {/* Lifecycle Pipeline */}
-      <div className="card" style={{ marginTop: 16 }}>
+      <div className="card" style={{ marginTop: 16 }} {...batchAttrs('E.總覽.Sankey')}>
         <div className="ch">
           <div>
             <h3>會員生命週期流向 · 本月</h3>
@@ -191,7 +192,7 @@ function ESegments() {
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }} {...batchAttrs('E.分群管理')}>
         {[
           { k: 'ops', l: '營運分群' },
           { k: 'mkt', l: '行銷分群' },
@@ -339,7 +340,7 @@ function EOutreach({ onPickMember }: { onPickMember: (id: string) => void }) {
     <>
       {/* P1 #6:SLA 逾期 alert bar — 整頁頂部第一眼可辨 */}
       {(urgentCount + overdueCount) > 0 && (
-        <div style={{
+        <div {...batchAttrs('E.主動聯繫')} style={{
           marginTop: 16, padding: '10px 14px',
           background: overdueCount > 0 ? '#FEE2E2' : '#FEF3E2',
           border: `1px solid ${overdueCount > 0 ? '#FCA5A5' : '#FCD34D'}`,
@@ -507,7 +508,7 @@ function EChurn({ onPickMember }: { onPickMember: (id: string) => void }) {
   return (
     <>
       {/* P1 #8:模型版本與更新日 — 政府評審常問 retrain 頻率 */}
-      <div style={{
+      <div {...batchAttrs('E.流失預測')} style={{
         marginTop: 16, padding: '8px 14px',
         background: '#F5F3FF', border: '1px solid #DDD6FE', borderLeft: '3px solid var(--as-cdefg)',
         borderRadius: 6,
@@ -621,7 +622,7 @@ function EChurn({ onPickMember }: { onPickMember: (id: string) => void }) {
 function EPoints({ onPickMember }: { onPickMember: (id: string) => void }) {
   return (
     <>
-      <div className="card" style={{ marginTop: 16 }}>
+      <div className="card" style={{ marginTop: 16 }} {...batchAttrs('E.積點管理')}>
         <div className="ch">
           <div><h3>積點系統 · 等級分布</h3><div className="csub">5 個會員等級 · 累積 / 兌換動態</div></div>
           <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>共 5,882 位</span>
@@ -750,7 +751,7 @@ export function ModuleE() {
     >
       {/* KPI 4 卡只在「總覽」顯示;其他 tab 各自有對應 hero/alert/工具列(依用戶要求 2026-05-28) */}
       {tab === 'daily' && (
-        <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }} {...batchAttrs('E.母體 8420 / 挽回 840K')}>
           {MEMBER_KPIS.map(kpi => (
             <div key={kpi.lbl} className={`kpi ${kpi.accent}`}>
               <div className="lbl">{kpi.lbl}</div>

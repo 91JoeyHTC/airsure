@@ -2,12 +2,12 @@
 import { useNavigate } from 'react-router-dom'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
+import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   PERSONAS,
   KPIS_BY_PERSONA,
   AI_BY_PERSONA,
   CONTACT_LIST,
-  FIELDS,
   MODULE_MAP,
 } from '../../mocks/dashboard'
 import type { PersonaId } from '../../hooks/usePersona'
@@ -31,15 +31,16 @@ function highlightWhy(why: string): string {
   )
 }
 
-export function Dashboard({ persona, onPersona }: DashboardProps) {
+export function Dashboard(_props: DashboardProps) {
   const navigate = useNavigate()
+  // 首頁固定以「總經理視角」呈現,不再依 prop 切換(視角切換 UI 已隱藏)
+  const persona: PersonaId = 'gm'
   const kpis = KPIS_BY_PERSONA[persona]
   const ai = AI_BY_PERSONA[persona]
   const currentPersona = PERSONAS.find((p) => p.id === persona)
 
   const abModules = MODULE_MAP.filter((m) => m.variant === 'ab')
-  const cdefgModules = MODULE_MAP.filter((m) => m.variant === 'cdefg')
-  const hModules = MODULE_MAP.filter((m) => m.variant === 'h')
+  // cdefg / h 模組區塊已依 PDF 拿掉,只留雙核心
 
   return (
     <div className="as-app">
@@ -151,22 +152,7 @@ export function Dashboard({ persona, onPersona }: DashboardProps) {
           </a>
         </nav>
 
-        <div className="persona">
-          <div className="plbl">視角切換</div>
-          <div className="row">
-            {PERSONAS.map((p) => (
-              <button
-                key={p.id}
-                className={`pbtn ${persona === p.id ? 'active' : ''}`}
-                onClick={() => onPersona(p.id)}
-                title={p.focus}
-              >
-                <span className="pic"><Icon name={p.icon} size={14} /></span>
-                <span>{p.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* 視角切換已隱藏(2026-05-29 依 PDF 指示) · 首頁固定 GM 視角 */}
 
         <div className="me">
           <div className="av">陳</div>
@@ -205,7 +191,6 @@ export function Dashboard({ persona, onPersona }: DashboardProps) {
         <div className="as-page">
           <div className="ptitle">
             <div>
-              <h1>早安，怡君 — 今日有 5 件需主動聯繫</h1>
               <div className="ptag">
                 {currentPersona?.label}視角 · 數據時間 2026/05/14 09:42 自動更新
               </div>
@@ -216,61 +201,9 @@ export function Dashboard({ persona, onPersona }: DashboardProps) {
             </button>
           </div>
 
-          {/* Today's focus ribbon */}
-          <div className="today-ribbon">
-            <div className="tlbl">
-              今日聚焦
-              <span className="big">
-                12<span className="u">場主動聯繫</span>
-              </span>
-            </div>
-            <div className="tline">
-              <div className="hr" style={{ left: '0%' }}>09:00</div>
-              <div className="hr" style={{ left: '20%' }}>11:00</div>
-              <div className="hr" style={{ left: '40%' }}>13:00</div>
-              <div className="hr" style={{ left: '60%' }}>15:00</div>
-              <div className="hr" style={{ left: '80%' }}>17:00</div>
-              <div className="hr" style={{ right: 0 }}>19:00</div>
-              <div className="evt" style={{ left: '4%', width: 92, background: 'var(--as-danger)' }}>
-                ★ 陳先生 · 撥打
-              </div>
-              <div className="evt" style={{ left: '22%', width: 84, background: 'var(--as-h)' }}>
-                李女士 · LINE
-              </div>
-              <div className="evt" style={{ left: '34%', width: 78, background: 'var(--as-cdefg)' }}>
-                到府保養
-              </div>
-              <div
-                className="evt"
-                style={{ left: '52%', width: 96, background: 'var(--as-warning)', color: '#1A1410' }}
-              >
-                3 通 待撥
-              </div>
-              <div className="evt" style={{ left: '74%', width: 72, background: 'var(--as-primary)' }}>
-                季度報告
-              </div>
-              <div className="now" style={{ left: '14%' }} />
-            </div>
-          </div>
-
-          {/* AI banner */}
-          <div className="as-ai-banner">
-            <div className="ai-ic"><Icon name="sparkles" size={20} /></div>
-            <div className="ai-cnt">
-              <div className="ttl">{ai.ttl}</div>
-              <div
-                className="msg"
-                dangerouslySetInnerHTML={{ __html: highlightAiMsg(ai.msg) }}
-              />
-            </div>
-            <div className="ai-act">
-              <button>稍後</button>
-              <button className="primary">採納並指派 →</button>
-            </div>
-          </div>
-
-          {/* KPI cards */}
-          <div className="kpi-row">
+          {/* KPI cards — 已調整至首段(原位置在 AI banner 下方,2026-05-29 改到今日聚焦上方) */}
+          {/* 卡數動態:gm 5 卡 / 其他角色 4 卡 */}
+          <div className="kpi-row" style={{ gridTemplateColumns: `repeat(${kpis.length}, 1fr)` }} {...batchAttrs('Dashboard.KPI')}>
             {kpis.map((k) => (
               <div key={k.lbl} className={`kpi ${k.accent}`}>
                 <div className="lbl">{k.lbl}</div>
@@ -300,17 +233,191 @@ export function Dashboard({ persona, onPersona }: DashboardProps) {
             ))}
           </div>
 
-          {/* Module map */}
-          <div className="modmap">
+          {/* Today's focus ribbon — 顧問行程
+              · 3 列 1 顧問:偉仁(綠) / 銘哲(紫) / 易杰(橘)
+              · 4 種服務類型:產品異常／維修 / 預約空氣檢測 / 預約定期保養 / 產品使用教學 */}
+          <div
+            className="today-ribbon"
+            {...batchAttrs('Dashboard.今日聚焦時間帶')}
+            style={{ alignItems: 'flex-start' }}
+          >
+            <div className="tlbl">
+              今日顧問行程
+              <span className="big">
+                12<span className="u">場主動聯繫</span>
+              </span>
+            </div>
+            {/* 取代原本 .tline 單列,改成 3 列顧問軌道 */}
+            <div style={{ position: 'relative', paddingLeft: 52, paddingTop: 4 }}>
+              {/* 時間軸刻度(共用) */}
+              <div style={{ position: 'relative', height: 14, marginBottom: 6 }}>
+                {[
+                  { l: '0%', t: '09:00' },
+                  { l: '20%', t: '11:00' },
+                  { l: '40%', t: '13:00' },
+                  { l: '60%', t: '15:00' },
+                  { l: '80%', t: '17:00' },
+                  { l: '100%', t: '19:00' },
+                ].map(h => (
+                  <div
+                    key={h.t}
+                    style={{
+                      position: 'absolute',
+                      left: h.l === '100%' ? undefined : h.l,
+                      right: h.l === '100%' ? 0 : undefined,
+                      top: 0,
+                      fontSize: 10,
+                      color: 'var(--as-mute)',
+                      fontFamily: 'var(--f-mono)',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {h.t}
+                  </div>
+                ))}
+              </div>
+
+              {/* 3 條顧問軌道 */}
+              {[
+                {
+                  name: '偉仁',
+                  color: 'var(--as-primary)',
+                  events: [
+                    { left: '0%',  width: 132, label: '★ 產品異常／維修', title: '偉仁 · 09:30 · 產品異常／維修' },
+                    { left: '56%', width: 110, label: '產品使用教學',     title: '偉仁 · 15:00 · 產品使用教學' },
+                  ],
+                },
+                {
+                  name: '銘哲',
+                  color: 'var(--as-cdefg)',
+                  events: [
+                    { left: '20%', width: 110, label: '預約空氣檢測', title: '銘哲 · 11:20 · 預約空氣檢測' },
+                    { left: '78%', width: 110, label: '預約定期保養', title: '銘哲 · 17:00 · 預約定期保養' },
+                  ],
+                },
+                {
+                  name: '易杰',
+                  color: 'var(--as-h)',
+                  events: [
+                    { left: '38%', width: 110, label: '預約定期保養', title: '易杰 · 13:00 · 預約定期保養' },
+                  ],
+                },
+              ].map((c, idx) => (
+                <div
+                  key={c.name}
+                  style={{
+                    position: 'relative',
+                    height: 22,
+                    marginBottom: idx < 2 ? 6 : 0,
+                  }}
+                >
+                  {/* 顧問名(左側固定欄) */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: -52,
+                      top: 4,
+                      width: 44,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: c.color,
+                    }}
+                  >
+                    {c.name}
+                  </div>
+                  {/* 軌道底 */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'var(--as-bg)',
+                      borderRadius: 6,
+                    }}
+                  />
+                  {/* 該顧問的行程 */}
+                  {c.events.map((ev, j) => (
+                    <div
+                      key={j}
+                      style={{
+                        position: 'absolute',
+                        left: ev.left,
+                        top: 3,
+                        width: ev.width,
+                        height: 16,
+                        borderRadius: 8,
+                        padding: '0 8px',
+                        fontSize: 10,
+                        color: '#fff',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        whiteSpace: 'nowrap',
+                        background: c.color,
+                      }}
+                      title={ev.title}
+                    >
+                      {ev.label}
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {/* 「現在」垂直線(跨 3 列) */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 'calc(52px + 14%)',
+                  top: 20,
+                  bottom: 0,
+                  width: 1,
+                  background: 'var(--as-danger)',
+                  zIndex: 2,
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: -14,
+                    left: -16,
+                    fontSize: 9,
+                    color: 'var(--as-danger)',
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  現在
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* AI banner */}
+          <div className="as-ai-banner" {...batchAttrs('Dashboard.AI 建議橫幅')}>
+            <div className="ai-ic"><Icon name="sparkles" size={20} /></div>
+            <div className="ai-cnt">
+              <div className="ttl">{ai.ttl}</div>
+              <div
+                className="msg"
+                dangerouslySetInnerHTML={{ __html: highlightAiMsg(ai.msg) }}
+              />
+            </div>
+            <div className="ai-act">
+              <button>稍後</button>
+              <button className="primary">採納並指派 →</button>
+            </div>
+          </div>
+
+          {/* 重要資訊(原八大模組總覽)— 2026-05-29 依 PDF 改名 + 只留雙核心 + 整列佔滿寬 */}
+          <div className="modmap" {...batchAttrs('Dashboard.八大模組總覽')}>
             <div className="hd">
               <div>
-                <h3>八大模組總覽</h3>
-                <div className="htag">環境與客戶雙核心 · 營運管理 · 智能決策中心</div>
+                <h3>重要資訊</h3>
+                <div className="htag">環境與客戶雙核心 · 場域 ↔ 用戶 數據樞紐</div>
               </div>
               <div className="htag">點擊任一模組進入詳情</div>
             </div>
-            <div className="grid">
-              {/* Left: A+B dual core */}
+            {/* 單欄佔滿;移除右側 C-H 模組區塊(依 PDF 指示) */}
+            <div className="grid" style={{ gridTemplateColumns: '1fr' }}>
               <div className="core">
                 <div className="ctitle">雙核心 · 場域 ↔ 用戶 數據樞紐</div>
                 <div className="row">
@@ -340,116 +447,13 @@ export function Dashboard({ persona, onPersona }: DashboardProps) {
                   ))}
                 </div>
               </div>
-
-              {/* Right: C/D/E/F/G (indigo) + H (orange) */}
-              <div className="right">
-                <div className="grp cdefg">
-                  {cdefgModules.map((m) => (
-                    <div
-                      key={m.key}
-                      className={`mod-card ${m.variant}`}
-                      onClick={() => navigate(m.route)}
-                    >
-                      <div className="mc-h">
-                        <span className="mc-key"><Icon name={m.icon} size={12} /></span>
-                      </div>
-                      <div className="mc-nm">{m.nm}</div>
-                      <div
-                        className="mc-num"
-                        style={m.numColor ? { color: m.numColor } : undefined}
-                      >
-                        {m.num}<span className="u">{m.u}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="grp h">
-                  {hModules.map((m) => (
-                    <div
-                      key={m.key}
-                      className={`mod-card ${m.variant}`}
-                      onClick={() => navigate(m.route)}
-                    >
-                      <div className="mc-h">
-                        <span className="mc-key"><Icon name={m.icon} size={12} /></span>
-                        <Icon name="arrow" size={14} />
-                      </div>
-                      <div className="mc-nm">{m.nm}</div>
-                      <div className="mc-num">
-                        {m.num}<span className="u">{m.u}</span>
-                      </div>
-                      {m.spark && (
-                        <div className="mc-spark">
-                          {m.spark.map((h, i) => (
-                            <span className="b" key={i} style={{ height: `${h * 1.2}px` }} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* Dash grid: field table + contact list */}
-          <div className="dash-grid">
-            {/* Field table */}
-            <div className="card">
-              <div className="ch">
-                <div>
-                  <h3>場域空氣品質 — 即時狀態</h3>
-                  <div className="csub">居家空氣場域 · TOP 異常排序</div>
-                </div>
-                <span className="clink">查看全部 1,284 →</span>
-              </div>
-              <table className="field-table">
-                <thead>
-                  <tr>
-                    <th>場域</th>
-                    <th className="hide-mob">設備</th>
-                    <th>狀態</th>
-                    <th>空氣品質</th>
-                    <th className="hide-mob">關聯會員</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {FIELDS.map((f) => (
-                    <tr key={f.id}>
-                      <td className="nm-cell">
-                        {f.nm}
-                        <span className="sub">{f.id} · {f.loc}</span>
-                      </td>
-                      <td className="hide-mob">{f.dev}</td>
-                      <td>
-                        <span className="lamp">
-                          <span className={`d ${f.lamp}`} />
-                          {f.lamp === 'g' ? '正常' : f.lamp === 'y' ? '警示' : '異常'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="pct-bar">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                            <span>{f.q}</span>
-                            <span style={{ color: 'var(--as-mute)' }}>/100</span>
-                          </div>
-                          <div className="tr">
-                            <div
-                              className={`fi ${f.qc === 'g' ? '' : f.qc}`}
-                              style={{ width: `${f.q}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="hide-mob">{f.mem}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Contact list */}
-            <div className="card contact-card">
+          {/* 主動聯繫名單(原 dash-grid 雙欄,2026-05-29 依 PDF 拿掉場域空品表,改成單欄佔滿全寬) */}
+          <div className="dash-grid" style={{ gridTemplateColumns: '1fr' }}>
+            {/* Contact list (full-width) */}
+            <div className="card contact-card" {...batchAttrs('Dashboard.需主動聯繫名單')}>
               <div className="ch">
                 <div>
                   <h3 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -476,28 +480,61 @@ export function Dashboard({ persona, onPersona }: DashboardProps) {
                 </span>
               </div>
               <div className="contact-list">
-                {CONTACT_LIST.map((c) => (
-                  <div className="row" key={c.cid}>
-                    <div className={`pip ${c.pip}`} />
-                    <div>
-                      <div className="who">
-                        {c.who}<span className="cid">{c.cid}</span>
+                {CONTACT_LIST.map((c) => {
+                  // Row 點擊 → 跳 Module B 個人 360°(沿用 Module E → B 既有 state pattern)
+                  const goPersona = () => navigate('/module-b', { state: { gotoIndividual: true, memberId: c.cid } })
+                  // 電話 icon → tel: 協定觸發 ICT/系統撥號
+                  const dial = (e: React.MouseEvent) => {
+                    e.stopPropagation()
+                    window.location.href = `tel:${c.phone.replace(/[^+\d]/g, '')}`
+                  }
+                  // 其他按鈕也跳個人 360°(訊息/檢視),阻止冒泡避免重複觸發
+                  const goPersonaBtn = (e: React.MouseEvent) => {
+                    e.stopPropagation()
+                    goPersona()
+                  }
+                  return (
+                    <div
+                      className="row"
+                      key={c.cid}
+                      onClick={goPersona}
+                      style={{ cursor: 'pointer' }}
+                      title={`查看 ${c.who} 的個人 360° 視圖${c.star ? '(主示範)' : ''}`}
+                    >
+                      <div className={`pip ${c.pip}`} />
+                      <div>
+                        <div className="who">
+                          {c.star && (
+                            <span
+                              title="個人 360° 主示範客戶"
+                              style={{
+                                display: 'inline-block',
+                                color: 'var(--as-warning)',
+                                marginRight: 4,
+                                fontSize: 12,
+                              }}
+                            >
+                              ★
+                            </span>
+                          )}
+                          {c.who}<span className="cid">{c.cid}</span>
+                        </div>
+                        <div
+                          className="why"
+                          dangerouslySetInnerHTML={{ __html: highlightWhy(c.why) }}
+                        />
                       </div>
-                      <div
-                        className="why"
-                        dangerouslySetInnerHTML={{ __html: highlightWhy(c.why) }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-                      <div className={`sla ${c.urgent ? 'urgent' : ''}`}>{c.sla}</div>
-                      <div className="acts">
-                        <button className="actbtn" title="撥打"><Icon name="phone" size={13} /></button>
-                        <button className="actbtn" title="訊息"><Icon name="msg" size={13} /></button>
-                        <button className="actbtn" title="檢視"><Icon name="eye" size={13} /></button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                        <div className={`sla ${c.urgent ? 'urgent' : ''}`}>{c.sla}</div>
+                        <div className="acts">
+                          <button className="actbtn" title={`撥打 ${c.phone}`} onClick={dial}><Icon name="phone" size={13} /></button>
+                          <button className="actbtn" title="訊息" onClick={goPersonaBtn}><Icon name="msg" size={13} /></button>
+                          <button className="actbtn" title="檢視個人 360°" onClick={goPersonaBtn}><Icon name="eye" size={13} /></button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>
