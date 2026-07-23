@@ -4,6 +4,8 @@ import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
 import { batchAttrs } from '../../components/ui/BatchAttrs'
+import { MemberSearch, Member360Live } from './Member360Live'
+import type { MemberHit } from '../../hooks/useMember360'
 import {
   FINANCE_RECORDS,
   B_OVERVIEW_JUMP_CARDS,
@@ -1010,12 +1012,21 @@ function PersonaView() {
   const [heroExpanded, setHeroExpanded] = useState(false)
   // D:共用「補資料」任務 — 主管(缺口 62%) / 行銷(LINE −40%) / 客服(Email/Line 待補) 點任一鈕進同一流程
   const [showMissingDataModal, setShowMissingDataModal] = useState(false)
+  // 真實會員模式:搜尋選定 SF 會員後整頁切換為 Live 360°(消費/服務紀錄);null = 示範會員(王曉明 mock)
+  const [liveMember, setLiveMember] = useState<MemberHit | null>(null)
 
   const stLabel = (st: 'g' | 'y' | 'r') => st === 'g' ? '正常' : st === 'y' ? '注意' : '警示'
   const stCls = (st: 'g' | 'y' | 'r') => st
 
+  if (liveMember) {
+    return <Member360Live member={liveMember} onBack={() => setLiveMember(null)} />
+  }
+
   return (
     <>
+      {/* ── 真實會員搜尋(Salesforce 即時)── */}
+      <MemberSearch onPick={setLiveMember} />
+
       {/* ── Hero 客戶識別卡 (A1–A6 §0 共用) ── */}
       <div className="card" style={{ marginBottom: 16, position: 'relative', overflow: 'hidden' }}>
         {/* decorative stripe — 改用克立淨綠系 */}

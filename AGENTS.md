@@ -186,6 +186,8 @@ git diff --cached --check
 | 端點 | 用途 | 使用處 |
 |------|------|--------|
 | `GET /api/revenue` | 營收 KPI / 逐月 YoY / 部門 / 通路 / 來源 / Top客戶 / 目標達成 | Module F(`src/hooks/useRevenue.ts`) |
+| `GET /api/members?q=` | 會員搜尋(Contact 姓名/電話模糊比對) | Module B 個人 360°(`src/hooks/useMember360.ts`) |
+| `GET /api/member360?id=` | 單一會員 profile + 消費紀錄(實績)+ 服務紀錄(派工/送修/維修完成,中台合併排序) | Module B 個人 360°(`src/modules/module-b/Member360Live.tsx`) |
 
 ### 串接模式(新模組接資料時遵循)
 
