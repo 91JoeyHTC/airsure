@@ -6,7 +6,7 @@ interface SparklineProps {
 }
 
 export function Sparkline({ data, color = 'var(--as-mute-2)', w = 70, h = 24 }: SparklineProps) {
-  if (!data.length) return null
+  if (data.length < 2) return null // 單點畫不出折線(i/(len-1) 會是 NaN)
   const max = Math.max(...data)
   const min = Math.min(...data)
   const range = max - min || 1
