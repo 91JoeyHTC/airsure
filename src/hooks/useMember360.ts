@@ -33,7 +33,16 @@ export interface MemberService {
 
 export interface Member360 {
   mode: 'live' | 'demo'
-  profile: { id: string; name: string; phone: string; email: string; created_date: string }
+  profile: {
+    id: string
+    name: string
+    phone: string
+    email: string
+    created_date: string
+    level: string          // 客戶等級(如「B:一般客人」)
+    bought_families: string[] // 曾購系列
+    bought_models: string[]   // 曾購機型
+  }
   purchase_summary: { total: number; count: number; first_d: string; last_d: string }
   purchases: MemberPurchase[]
   services: MemberService[]

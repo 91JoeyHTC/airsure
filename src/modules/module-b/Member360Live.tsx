@@ -86,12 +86,31 @@ export function Member360Live({ member, onBack }: { member: MemberHit; onBack: (
             {member.name[0]}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--as-ink)' }}>{member.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--as-ink)' }}>{member.name}</span>
+              {data?.profile.level && <span className="pill g">{data.profile.level}</span>}
+            </div>
             <div style={{ fontSize: 12, color: 'var(--as-mute)', marginTop: 2 }}>
               <span className="mono">{member.phone || '—'}</span>
               {member.email && <span style={{ marginLeft: 12 }}>{member.email}</span>}
               {data?.profile.created_date && <span style={{ marginLeft: 12 }}>建檔 {data.profile.created_date}</span>}
             </div>
+            {data && (data.profile.bought_families.length > 0 || data.profile.bought_models.length > 0) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                {data.profile.bought_families.length > 0 && (
+                  <>
+                    <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>曾購系列</span>
+                    {data.profile.bought_families.map(f => <span key={f} className="chip">{f}</span>)}
+                  </>
+                )}
+                {data.profile.bought_models.length > 0 && (
+                  <>
+                    <span style={{ fontSize: 11, color: 'var(--as-mute)', marginLeft: data.profile.bought_families.length > 0 ? 10 : 0 }}>曾購機型</span>
+                    {data.profile.bought_models.map(m => <span key={m} className="chip">{m}</span>)}
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <span className="mono" style={{ fontSize: 10, color: 'var(--as-mute)' }}>{member.id}</span>
         </div>

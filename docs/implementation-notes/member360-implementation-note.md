@@ -17,6 +17,13 @@
 - 中台端點:搜尋(姓名/電話 LIKE,LIMIT 20)、member360(profile + 實績消費 + 三物件服務紀錄合併排序;id regex 驗證、`_soql_escape` 防注入、picklist 用 `TOLABEL()` 取中文標籤、demo 模式假資料、單物件失敗不影響其他區塊)。
 - 前端 hook(300ms debounce 搜尋 / 單會員 360°,打不到中台回 null)與 Live 視圖(profile 卡 + 4 KPI + 消費表 + 服務表,「SALESFORCE 即時」標示、待接入區塊註記、返回示範會員)。
 
+## 追加(2026-07-23 第二輪)
+
+- profile 增加:客戶等級(`Contact.CustomerLevel__c`,TOLABEL)、曾購系列(`BuyProductFamily__c`)、曾購機型(`BuyProductModel__c`);後兩者為分號分隔 textarea,中台以 `_semi_list` 拆為字串陣列。
+- UI:等級以綠色 pill 顯示在姓名旁;曾購系列/機型以 chips 列在識別卡。
+- 驗證:林雯雯 → 「B:一般客人」+ CS系列 + CS101/CS100 ✅(E2E 全綠、tsc OK)。
+- pitfall:SOQL 欄位別名僅 aggregate 與 `TOLABEL()` 可用,一般欄位加別名會 MALFORMED_QUERY。
+
 ## 驗證紀錄(2026-07-23)
 
 - `curl /api/members?q=林雯` → 3 筆 Contact ✅
