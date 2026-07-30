@@ -44,6 +44,17 @@ export interface Member360 {
     level: string          // 客戶等級(如「B:一般客人」)
     bought_families: string[] // 曾購系列
     bought_models: string[]   // 曾購機型
+    // 識別卡補充欄位(SF Contact:Sex__c / Birthday__c / CustomerAge__c / City__c / Area__c
+    //   / Address__c / CleanZone__c / CSR_EmployeeID__r.Name / NextMaintenanceDate__c)
+    sex?: string           // 性別
+    birthday?: string      // 生日 YYYY-MM-DD
+    age?: number | null    // 年齡(SF 衍生欄位)
+    city?: string          // 縣市
+    area?: string          // 區域
+    address?: string       // 地址
+    clean_zone?: string    // 克立淨分區(如「北一區」)
+    consultant?: string    // 服務顧問(客服負責人)
+    next_maintenance?: string // 下次定保(SF 型別為 string)
   }
   purchase_summary: { total: number; count: number; first_d: string; last_d: string }
   purchases: MemberPurchase[]

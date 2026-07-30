@@ -4,6 +4,7 @@
  * SF 沒有的區塊(設備、訂閱、積點、分群)標注待資料源接入,可返回示範會員查看完整版面。
  */
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Icon } from '../../components/ui/Icon'
 import { batchAttrs } from '../../components/ui/BatchAttrs'
 import { useMemberSearch, useMember360 } from '../../hooks/useMember360'
@@ -13,6 +14,29 @@ const KIND_CLS: Record<MemberService['kind'], string> = {
   '派工': 'g',
   '送修': 'y',
   '維修完成': '', // 中性樣式
+}
+
+/** 由日期字串(YYYY-MM-DD)算滿幾年,無法解析回 null。 */
+function yearsSince(dateStr?: string): number | null {
+  if (!dateStr) return null
+  const t = Date.parse(dateStr)
+  if (Number.isNaN(t)) return null
+  const now = new Date()
+  const d = new Date(t)
+  let y = now.getFullYear() - d.getFullYear()
+  const m = now.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) y -= 1 // 未滿週年不進位
+  return y < 0 ? null : y
+}
+
+/** 識別卡一格:小圖示 + 文字,值為空時不渲染。 */
+function MetaItem({ icon, children }: { icon: string; children: ReactNode }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--as-mute)' }}>
+      <span aria-hidden style={{ fontSize: 13, opacity: 0.85 }}>{icon}</span>
+      {children}
+    </span>
+  )
 }
 
 export function MemberSearch({ onPick }: { onPick: (m: MemberHit) => void }) {
@@ -98,8 +122,39 @@ export function Member360Live({ member, onBack }: { member: MemberHit; onBack: (
             <div style={{ fontSize: 12, color: 'var(--as-mute)', marginTop: 2 }}>
               <span className="mono">{member.phone || '—'}</span>
               {member.email && <span style={{ marginLeft: 12 }}>{member.email}</span>}
-              {data?.profile.created_date && <span style={{ marginLeft: 12 }}>建檔 {data.profile.created_date}</span>}
             </div>
+            {data && (() => {
+              const p = data.profile
+              const age = p.age ?? yearsSince(p.birthday)
+              const region = [p.city, p.area].filter(Boolean).join('')
+              const tenure = yearsSince(p.created_date)
+              const hasMeta = p.sex || age != null || p.birthday || region || p.clean_zone || p.consultant || p.created_date
+              if (!hasMeta) return null
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 6, marginTop: 8 }}>
+                  {(p.sex || age != null || p.birthday) && (
+                    <MetaItem icon="👤">
+                      {[p.sex, age != null ? `${age} 歲` : null].filter(Boolean).join(' · ')}
+                      {p.birthday && <span style={{ marginLeft: 4 }}>({p.birthday})</span>}
+                    </MetaItem>
+                  )}
+                  {region && <MetaItem icon="📍">{region}</MetaItem>}
+                  {p.clean_zone && <MetaItem icon="🏢">克立淨 {p.clean_zone}</MetaItem>}
+                  {p.consultant && <MetaItem icon="🎧">服務顧問 {p.consultant}</MetaItem>}
+                  {p.created_date && (
+                    <MetaItem icon="📅">
+                      {tenure != null ? `建立 ${tenure} 年` : '建立'} ({p.created_date})
+                    </MetaItem>
+                  )}
+                  {p.next_maintenance && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--as-warning, #D97706)' }}>
+                      <span aria-hidden style={{ fontSize: 13 }}>🗓️</span>
+                      下次定保 {p.next_maintenance}
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
             {data && (data.profile.bought_families.length > 0 || data.profile.bought_models.length > 0) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 }}>
                 {data.profile.bought_families.length > 0 && (

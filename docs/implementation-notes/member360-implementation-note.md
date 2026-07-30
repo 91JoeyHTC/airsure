@@ -49,8 +49,24 @@
 - 尚未做(使用者本輪未要求):LIMIT 20 命中截斷提示。
 - 驗證:`npm run build` ✅、中台 `py_compile app.py` ✅。中台需手動重啟(未帶 `--reload`)才會生效;Live 端到端待中台重啟後人工確認同名情境。
 
+## 追加(2026-07-30 第四輪:Live 識別卡補齊客戶欄位)
+
+- 需求(截圖):識別卡要顯示性別/年齡/生日、縣市區、克立淨分區、服務顧問、年資、下次定保。
+- 欄位對應(依 DB repo《客戶主檔_Salesforce欄位對應.md》,已用 describe 撈真實 schema):
+  - 性別 `Sex__c`(picklist,TOLABEL)、生日 `Birthday__c`(date)、年齡 `CustomerAge__c`(double,SF 衍生,中台不重算)
+  - 縣市 `City__c` / 區域 `Area__c`(picklist,TOLABEL)、地址 `Address__c`(textarea)
+  - 克立淨分區 `CleanZone__c`(picklist,TOLABEL)
+  - 服務顧問 = 負責人員(客服)`CSR_EmployeeID__r.Name`(reference;⚠️語意待使用者確認是否為「服務顧問」,另一候選是業務 `SalesMan__c`)
+  - 年資:前端由 `CreatedDate` 算滿幾年(`yearsSince`,未滿週年不進位)
+  - 下次定保 `NextMaintenanceDate__c`(⚠️SF 型別為 **string**,原樣回傳/顯示,不當 date 排序)
+- 中台 member360 單筆 Contact 查詢一次取回上列欄位(不增加 SOQL 次數);profile 新增 sex/birthday/age/city/area/address/clean_zone/consultant/next_maintenance;demo profile 同步補值(王曉明)。
+- 前端:`Member360.profile` 型別加對應選填欄位;識別卡姓名列下方新增 meta row(👤性別·年齡(生日) 📍縣市區 🏢克立淨 分區 🎧服務顧問 📅建立 N 年(建檔日)),下次定保另起一行以警示色 `--as-warning` 強調。
+- pitfall 沿用:SOQL 一般欄位加別名會 MALFORMED,只有 aggregate / TOLABEL 可別名;`CSR_EmployeeID__r.Name` 回傳為巢狀 dict,以 `(c.get("CSR_EmployeeID__r") or {}).get("Name")` 取。
+- 驗證:`npm run build` ✅、中台 `py_compile app.py` ✅、demo 路徑資料齊。Live(真實 Contact)因需中台重啟 + SF 連線,端到端待人工確認,尤其 `CSR_EmployeeID__r.Name` 與 `Area__c`/`CleanZone__c` 是否有值。
+
 ## 下一步建議
 
+- 服務顧問語意確認:`CSR_EmployeeID__c`(客服負責人)vs `SalesMan__c`(業務)——若截圖「服務顧問」實為業務,改用 `SalesMan__c`。
 - 下一範圍(plan 已列):RFM 分群 + 價值象限散點圖改吃 `TargetAndPerformance__c` by ContactId 彙總。
 - 可選:搜尋命中達 20 筆時顯示「結果過多,請輸入更完整條件」避免靜默截斷。
 - 線上部署(pages.dev)要吃 Live 需中台公開 https 網址 + `VITE_MIDDLE_API` build 變數(見 2026-07-23 對話結論)。
