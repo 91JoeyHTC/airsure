@@ -40,7 +40,17 @@
 - 示範會員 mock 名為「王敬梅」(非註解中的王曉明)。
 - `member360` 首次呼叫約 3–6 秒(5 條 SOQL 無快取);單客查詢輕量故未加快取,若展示時感覺慢可補。
 
+## 追加(2026-07-30 第三輪:搜尋結果加辨識欄位)
+
+- 需求:同名或同電話的客戶,搜尋清單列視覺上無法分辨(原本只顯示姓名·電話·Email)。
+- 中台 `/api/members`:SELECT 追加 `CreatedDate` 與 `TOLABEL(CustomerLevel__c) lvl`(同一筆 Contact 查詢即可取得,不增加 SOQL 次數);每筆回傳新增 `level`、`created_date`(`_d10` 取前 10 碼)。demo 會員(王曉明)補上對應欄位。
+- 前端:`MemberHit` 加選填 `level` / `created_date`;`MemberSearch` 每列在右側補「等級 chip · 建檔日 · Id 末 6 碼」,同名/同電話即可區分(Id 末碼為唯一保底鍵)。
+- 唯一鍵仍為 Salesforce Contact `Id`(`key={m.id}`、帶出 360° 用 `member.id`),重複資料不會混。
+- 尚未做(使用者本輪未要求):LIMIT 20 命中截斷提示。
+- 驗證:`npm run build` ✅、中台 `py_compile app.py` ✅。中台需手動重啟(未帶 `--reload`)才會生效;Live 端到端待中台重啟後人工確認同名情境。
+
 ## 下一步建議
 
 - 下一範圍(plan 已列):RFM 分群 + 價值象限散點圖改吃 `TargetAndPerformance__c` by ContactId 彙總。
+- 可選:搜尋命中達 20 筆時顯示「結果過多,請輸入更完整條件」避免靜默截斷。
 - 線上部署(pages.dev)要吃 Live 需中台公開 https 網址 + `VITE_MIDDLE_API` build 變數(見 2026-07-23 對話結論)。

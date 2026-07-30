@@ -53,8 +53,13 @@ export function MemberSearch({ onPick }: { onPick: (m: MemberHit) => void }) {
               }}
             >
               <span style={{ fontWeight: 600, color: 'var(--as-ink)' }}>{m.name}</span>
-              <span className="mono" style={{ fontSize: 12, color: 'var(--as-mute)' }}>{m.phone}</span>
-              <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{m.email}</span>
+              <span className="mono" style={{ fontSize: 12, color: 'var(--as-mute)' }}>{m.phone || '—'}</span>
+              {m.email && <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{m.email}</span>}
+              {/* 辨識欄位:同名/同電話時用等級、建檔日、Id 末碼區分 */}
+              <span style={{ flex: 1 }} />
+              {m.level && <span className="chip">{m.level}</span>}
+              {m.created_date && <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>建檔 {m.created_date}</span>}
+              <span className="mono" style={{ fontSize: 10, color: 'var(--as-mute)' }}>…{m.id.slice(-6)}</span>
             </button>
           ))}
         </div>

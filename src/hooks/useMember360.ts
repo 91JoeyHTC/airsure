@@ -12,6 +12,8 @@ export interface MemberHit {
   name: string
   phone: string
   email: string
+  level?: string        // 客戶等級(如「B:一般客人」);中台搜尋結果帶回,用來辨識同名/同電話
+  created_date?: string // 建檔日期 YYYY-MM-DD;同上,重複時的辨識欄位
 }
 
 export interface MemberPurchase {
