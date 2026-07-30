@@ -53,7 +53,8 @@ export interface Member360 {
     area?: string          // 區域
     address?: string       // 地址
     clean_zone?: string    // 克立淨分區(如「北一區」)
-    consultant?: string    // 服務顧問(客服負責人)
+    consultant?: string    // 服務顧問 = 最近一次消費業務(SalesBy__c)
+    consultant_dept?: string // 業務員部門(成員部門,SalesByDepartment__c)
     next_maintenance?: string // 下次定保(SF 型別為 string)
   }
   purchase_summary: { total: number; count: number; first_d: string; last_d: string }

@@ -127,8 +127,10 @@ export function Member360Live({ member, onBack }: { member: MemberHit; onBack: (
               const p = data.profile
               const age = p.age ?? yearsSince(p.birthday)
               const region = [p.city, p.area].filter(Boolean).join('')
+              const location = [region, p.address].filter(Boolean).join(' · ') // 縣市區 + 完整門牌
               const tenure = yearsSince(p.created_date)
-              const hasMeta = p.sex || age != null || p.birthday || region || p.clean_zone || p.consultant || p.created_date
+              const consultant = [p.consultant, p.consultant_dept].filter(Boolean).join(' · ') // 最近消費業務 · 業務員部門
+              const hasMeta = p.sex || age != null || p.birthday || location || p.clean_zone || consultant || p.created_date
               if (!hasMeta) return null
               return (
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 6, marginTop: 8 }}>
@@ -138,9 +140,9 @@ export function Member360Live({ member, onBack }: { member: MemberHit; onBack: (
                       {p.birthday && <span style={{ marginLeft: 4 }}>({p.birthday})</span>}
                     </MetaItem>
                   )}
-                  {region && <MetaItem icon="📍">{region}</MetaItem>}
+                  {location && <MetaItem icon="📍">{location}</MetaItem>}
                   {p.clean_zone && <MetaItem icon="🏢">克立淨 {p.clean_zone}</MetaItem>}
-                  {p.consultant && <MetaItem icon="🎧">服務顧問 {p.consultant}</MetaItem>}
+                  {consultant && <MetaItem icon="🎧">服務顧問 {consultant}</MetaItem>}
                   {p.created_date && (
                     <MetaItem icon="📅">
                       {tenure != null ? `建立 ${tenure} 年` : '建立'} ({p.created_date})
