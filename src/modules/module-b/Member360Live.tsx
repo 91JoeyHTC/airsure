@@ -50,7 +50,7 @@ export function MemberSearch({ onPick }: { onPick: (m: MemberHit) => void }) {
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
-          placeholder="搜尋真實會員(Salesforce)— 姓名或電話,至少 2 字"
+          placeholder="搜尋真實會員(Salesforce)— 姓名、電話或客戶編號,至少 2 字"
           style={{
             flex: 1, border: 'none', outline: 'none', background: 'transparent',
             fontSize: 13, color: 'var(--as-ink)',
@@ -77,6 +77,8 @@ export function MemberSearch({ onPick }: { onPick: (m: MemberHit) => void }) {
               }}
             >
               <span style={{ fontWeight: 600, color: 'var(--as-ink)' }}>{m.name}</span>
+              {/* 客戶編號:設備分析報告的 customer.code,也是唯一能對回 Module A 場域的鍵 */}
+              {m.lead_num && <span className="mono" style={{ fontSize: 11, color: 'var(--as-info)' }}>{m.lead_num}</span>}
               <span className="mono" style={{ fontSize: 12, color: 'var(--as-mute)' }}>{m.phone || '—'}</span>
               {m.email && <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{m.email}</span>}
               {/* 辨識欄位:同名/同電話時用等級、建檔日、Id 末碼區分 */}
@@ -117,6 +119,12 @@ export function Member360Live({ member, onBack }: { member: MemberHit; onBack: (
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--as-ink)' }}>{member.name}</span>
+              {/* 客戶編號 —— 對得回設備分析報告與 Module A 場域,放在名字旁邊最好認 */}
+              {(data?.profile.lead_num || member.lead_num) && (
+                <span className="mono" style={{ fontSize: 12, color: 'var(--as-info)' }}>
+                  {data?.profile.lead_num || member.lead_num}
+                </span>
+              )}
               {data?.profile.level && <span className="pill g">{data.profile.level}</span>}
             </div>
             <div style={{ fontSize: 12, color: 'var(--as-mute)', marginTop: 2 }}>

@@ -1004,7 +1004,7 @@ function SegmentView() {
 //   主管視圖 → 價值與風險 / 行銷視圖 → 觸及與商機 / 客服視圖 → 聯絡與歷程 / 顧問視圖 → 設備與到府
 type PSubTab = '價值與風險' | '觸及與商機' | '聯絡與歷程' | '設備與到府' | '居家與畫像' | '訂閱、積點與帳務' | '跨模組信號'
 
-function PersonaView() {
+function PersonaView({ initialLiveMember }: { initialLiveMember?: MemberHit | null }) {
   const w = WANG_PROFILE
   const e = WANG_MEMBER_EXT
   const [subTab, setSubTab] = useState<PSubTab>('價值與風險')
@@ -1013,7 +1013,7 @@ function PersonaView() {
   // D:共用「補資料」任務 — 主管(缺口 62%) / 行銷(LINE −40%) / 客服(Email/Line 待補) 點任一鈕進同一流程
   const [showMissingDataModal, setShowMissingDataModal] = useState(false)
   // 真實會員模式:搜尋選定 SF 會員後整頁切換為 Live 360°(消費/服務紀錄);null = 示範會員(王曉明 mock)
-  const [liveMember, setLiveMember] = useState<MemberHit | null>(null)
+  const [liveMember, setLiveMember] = useState<MemberHit | null>(initialLiveMember ?? null)
 
   const stLabel = (st: 'g' | 'y' | 'r') => st === 'g' ? '正常' : st === 'y' ? '注意' : '警示'
   const stCls = (st: 'g' | 'y' | 'r') => st
@@ -2263,12 +2263,17 @@ function PersonaView() {
 export function ModuleB() {
   const [tab, setTab] = useState('individual')
 
-  // 跨模組跳轉:Module E 各 row 點擊 → navigate('/module-b', { state: { gotoIndividual: true, memberId } })
-  // 接收後自動切到「個人 360° 視圖」tab(會員 360° 已整合進此處)
+  /* 跨模組跳轉:
+   *   Module E 各 row → navigate('/module-b', { state: { gotoIndividual: true, memberId } })
+   *   Module A 場域詳情識別卡 → 多帶 liveMember(SF Contact),直接開該會員的 Live 360°,
+   *     免去使用者再搜尋一次(場域詳情已經知道是誰了)。 */
   const location = useLocation()
+  const navState = location.state as { gotoIndividual?: boolean; liveMember?: MemberHit } | null
+  const [initialLiveMember, setInitialLiveMember] = useState<MemberHit | null>(navState?.liveMember ?? null)
   useEffect(() => {
-    const st = location.state as { gotoIndividual?: boolean } | null
+    const st = location.state as { gotoIndividual?: boolean; liveMember?: MemberHit } | null
     if (st?.gotoIndividual) setTab('individual')
+    if (st?.liveMember) setInitialLiveMember(st.liveMember)
   }, [location.state])
 
   return (
@@ -2319,7 +2324,7 @@ export function ModuleB() {
 
       {tab === 'overall'    && <OverallView />}
       {tab === 'segment'    && <SegmentView />}
-      {tab === 'individual' && <PersonaView />}
+      {tab === 'individual' && <PersonaView key={initialLiveMember?.id ?? 'demo'} initialLiveMember={initialLiveMember} />}
     </PageShell>
   )
 }

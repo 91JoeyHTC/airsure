@@ -1,6 +1,9 @@
 /* AirSure — Module A mock data: 居家空氣場域 */
 
 /* ── 六大類型參照表(方案 C 業務端代號為主、方案 A 身分標籤為副) ───────── */
+import { DEVICE_REPORTS, deviceFieldId } from './devices'
+import type { DeviceReport } from './devices'
+
 export type CatId = '1' | '2' | '3' | '4' | '5' | '6'
 export type Disposition = 'ok' | 'attention' | 'warning'
 
@@ -151,7 +154,36 @@ export interface FieldRecord {
   predictedDays: number // 最快需要更換的耗材預估剩餘天數
 }
 
+/* 真實設備 → 場域清單列。nm 由地址前兩段推出,只為清單好讀;主鍵仍是 MAC。 */
+const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
+  const m = r.meta
+  const worst = [...r.consumables].sort((a, b) => a.remainingPct - b.remainingPct)[0]
+  const city = m.address.slice(0, 3), dist = m.address.slice(3, 5)
+  return {
+    nm: `${city.replace('臺', '台')}${dist}居家`,
+    id: deviceFieldId(m.mac),
+    customerId: m.customerCode,
+    /* 清單不顯示姓名(個資不落地);要看是誰,點進場域詳情由識別卡即時向 SF 取。 */
+    customerName: m.customerCode,
+    addr: m.address.slice(3),
+    type: '居家', sz: 0, dev: '1/1',
+    lamp: m.airScore >= 75 ? 'g' : m.airScore >= 60 ? 'y' : 'r',
+    q: Math.round(m.airScore),
+    pm: Math.round(r.daily[r.daily.length - 1].avg),
+    co2: 0,
+    mem: m.customerCode,
+    tier: '',
+    cat: (({ 金級空氣: '1', 銀級空氣: '2', 銅級空氣: '3', 濕度風險: '4', 清淨風險: '5', 清淨除濕雙風險: '6' } as Record<string, CatId>)[m.segment]) ?? '1',
+    hrs: Math.round(m.runHours / m.days * 10) / 10,
+    minPct: worst.remainingPct,
+    predictedDays: Math.round(worst.daysLeft),
+  }
+})
+
 export const FIELDS_A_FULL: FieldRecord[] = [
+  /* ★ 真實資料列(3 台),由 DEVICE_REPORTS 產生 —— 見本檔後段 fieldDetailFromReport。
+   *   其餘 9 列仍為示範資料。 */
+  ...DEVICE_ROWS,
   { nm: '臺北信義居家',   id: 'SH-0021', customerId: 'C202105001', customerName: '陳俊宏',       addr: '信義區松仁路',  type: '居家', sz: 42,  dev: '4/4',  lamp: 'g', q: 92, pm: 12, co2: 642,  mem: '陳俊宏 · 高級',  tier: 'g', cat: '1', hrs: 18.2, minPct: 64, predictedDays:  72 },
   { nm: '新北板橋辦公',   id: 'SH-1147', customerId: 'C202003042', customerName: '李文君',       addr: '板橋區文化路',  type: '辦公', sz: 88,  dev: '8/9',  lamp: 'y', q: 76, pm: 32, co2: 894,  mem: '李文君',         tier: '',  cat: '3', hrs: 10.4, minPct: 28, predictedDays:  18 },
   { nm: '臺中科技園區',   id: 'SH-2841', customerId: 'C201000272', customerName: '王婉真',       addr: '西屯區工業區',  type: '辦公', sz: 185, dev: '6/10', lamp: 'r', q: 48, pm: 84, co2: 1240, mem: '王婉真 · 高級',  tier: 'g', cat: '6', hrs:  6.1, minPct: 11, predictedDays:   6 },
@@ -324,24 +356,9 @@ export const SEGMENTS_A: Segment[] = [
   },
 ]
 
-export interface ConsumableCategory {
-  k: string
-  nm: string
-  sub: string
-  avg: number
-  dist: { i: number; n: number; w: number; r: number }
-  life: string
-  clr: string
-}
-
-export const CONSUMABLE_CATS: ConsumableCategory[] = [
-  { k: 'pre', nm: '前置濾網', sub: 'Pre-Filter', avg: 58, dist: { i: 84, n: 142, w: 412, r: 646 }, life: '90 天', clr: '#16A085' },
-  { k: 'ecfL', nm: 'ECF · 左', sub: 'Electrostatic L', avg: 42, dist: { i: 168, n: 224, w: 388, r: 504 }, life: '180 天', clr: '#4F46E5' },
-  { k: 'ecfR', nm: 'ECF · 右', sub: 'Electrostatic R', avg: 44, dist: { i: 152, n: 218, w: 402, r: 512 }, life: '180 天', clr: '#7C3AED' },
-  { k: 'hepa', nm: 'HEPA', sub: '主濾網', avg: 67, dist: { i: 56, n: 88, w: 348, r: 792 }, life: '365 天', clr: '#0E7A66' },
-  { k: 'plasma', nm: '電漿模組', sub: 'Plasma', avg: 72, dist: { i: 38, n: 64, w: 282, r: 900 }, life: '730 天', clr: '#D97706' },
-  { k: 'uv', nm: 'UV 負離子', sub: 'UV-C', avg: 81, dist: { i: 22, n: 41, w: 168, r: 1053 }, life: '1,095 天', clr: '#DC2626' },
-]
+/* 註:原本的 CONSUMABLE_CATS(全站 6 類耗材平均殘量 + 4 階段分布)已移除。
+ * 理由:① 報告實際只有 5 個元件,沒有 UV-C;② 全站分布是整體層的統計,
+ * 不該出現在「單一裝置」的濾網管理視圖。耗材改由 devices[].consumables 提供。 */
 
 export interface UrgentDevice {
   mid: string
@@ -382,17 +399,77 @@ export interface FieldDeviceUnit {
   status: 'online' | 'offline' | 'alert'
   uptimePct: number  // 在線率 %
   hoursToday: number // 今日開機時數
+  /* 該台的耗材狀態。報告的顆粒度就是「一台設備一份」,所以耗材掛在裝置上,
+   * 不再由前端拿場域層的數字乘在線率推算。 */
+  consumables: FieldConsumable[]
 }
 
+/* 耗材狀態 — 對齊 AirCare 設備分析報告「耗材狀態分析」章節的欄位。
+ * 報告實際輸出為 5 個元件(前置濾網 / ECF 左 / ECF 右 / HEPA / 電漿模組),沒有 UV-C。
+ * 剩餘百分比為依原廠規格上限推算的估算值,不是設備原生回報值。 */
 export interface FieldConsumable {
   k: string
   nm: string
   sub: string
-  pct: number        // 剩餘 %
-  daysLeft: number   // 預估剩餘天數
-  life: string
+  clr: string
+  remainHours: number     // 剩餘小時
+  usedHours: number       // 估算已用小時
+  capHours: number        // 估算上限(原廠規格)
+  pct: number             // 剩餘百分比 = remainHours / capHours
+  dailyBurnHours: number  // 每日等效消耗(依模式/風量使用習慣換算)
+  daysLeft: number        // 預估剩餘天數
+  exhaustDate: string     // 預估耗盡日 YYYY-MM-DD
   status: 'critical' | 'soon' | 'watch' | 'ok'
 }
+
+/* 5 個元件的原廠規格上限與每日等效消耗。正式版由中台下發,公式來源見報告註記
+ * `docs/filter-lifetime-calculation.md`(中台側)。 */
+const CONSUMABLE_SPEC = [
+  { k: 'pre',    nm: '前置濾網', sub: 'Pre-Filter',      capHours: 2232, dailyBurnHours: 8.55, clr: '#16A085' },
+  { k: 'ecfL',   nm: 'ECF · 左', sub: 'Electrostatic L', capHours: 4380, dailyBurnHours: 9.05, clr: '#4F46E5' },
+  { k: 'ecfR',   nm: 'ECF · 右', sub: 'Electrostatic R', capHours: 4380, dailyBurnHours: 9.05, clr: '#7C3AED' },
+  { k: 'hepa',   nm: 'HEPA',     sub: '主濾網',          capHours: 8760, dailyBurnHours: 7.83, clr: '#0E7A66' },
+  { k: 'plasma', nm: '電漿模組', sub: 'Plasma',          capHours: 8760, dailyBurnHours: 7.83, clr: '#D97706' },
+] as const
+
+/* 緊急度依「剩餘百分比」判定。由四份實際報告的 12 個輸出回推,三級可完全分離:
+ *   立即處理 [0.0, 13.2, 23.9]  近期處理 [30.7, 41.0, 46.7, 48.2]  持續觀察 [69.0 … 83.8]
+ *
+ * 為什麼不是天數:同一批 12 點用「預估剩餘天數」無法分離 ——
+ *   立即最大 63.6 天(1cdbd4f8def8 ECF 23.9%)> 近期最小 57.8 天(806599927630 前置 46.7%),
+ *   近期最大 233.4 天 > 觀察最小 175.4 天。兩處都重疊。
+ *
+ * ⚠ 門檻只被資料夾在區間內,不是報告明寫:
+ *   立即/近期 邊界落在 (23.9, 30.7] → 取 30
+ *   近期/觀察 邊界落在 (48.2, 69.0] → 取 50
+ * ⚠ 第四級「更換備料」四份報告都未出現,門檻未知。 */
+function urgencyOf(pct: number): FieldConsumable['status'] {
+  if (pct < 30) return 'critical'
+  if (pct < 50) return 'soon'
+  return 'watch'
+}
+
+/* 以「估算已用小時」推導單一裝置的 5 筆耗材狀態(mock 用;正式版整包由中台給) */
+function makeConsumables(baseDate: string, usedHours: number[]): FieldConsumable[] {
+  const base = new Date(baseDate + 'T00:00:00Z')
+  return CONSUMABLE_SPEC.map((s, i) => {
+    const used = Math.min(usedHours[i] ?? 0, s.capHours)
+    const remainHours = s.capHours - used
+    const pct = Math.round((remainHours / s.capHours) * 1000) / 10
+    const daysLeft = Math.round((remainHours / s.dailyBurnHours) * 10) / 10
+    const exhaust = new Date(base.getTime() + Math.round(daysLeft) * 86400000)
+    return {
+      k: s.k, nm: s.nm, sub: s.sub, clr: s.clr,
+      remainHours, usedHours: used, capHours: s.capHours,
+      pct, dailyBurnHours: s.dailyBurnHours, daysLeft,
+      exhaustDate: exhaust.toISOString().slice(0, 10),
+      status: urgencyOf(pct),
+    }
+  })
+}
+
+/* 耗盡日的推算基準日(報告的「耗盡日基準日」) */
+export const CONSUMABLE_BASE_DATE = '2026-08-11'
 
 export interface FieldEvent {
   date: string       // YYYY/MM/DD
@@ -409,6 +486,69 @@ export interface FieldAiCause {
   action: string
 }
 
+/* AirCare 指數 — 對齊 aircareRP 報告產出引擎的口徑:
+ *   總分 = PM2.5 分數 × 50% + 濕度分數 × 50%
+ * 分數一律由中台計算後下發,前端只負責顯示與分級文案;
+ * 欄位形狀刻意對齊未來 GET /api/field360 的 response,接上時直接換資料源。 */
+export interface AirScore {
+  total: number             // 綜合指數 0–100
+  pm25Score: number         // PM2.5 分數 0–100
+  humidityScore: number     // 濕度分數 0–100
+  pm25Avg: number           // 期間平均 PM2.5 µg/m³(分數的計算基礎,非即時值)
+  humidityAvg: number       // 期間平均相對濕度 %
+  humidityP90: number       // 濕度 P90 %
+  humidityOver65Pct: number // 濕度 ≥65% 佔比 %
+  outdoorPm25Avg: number    // 室外參考測站期間平均 µg/m³
+  outdoorStation: string    // 室外參考測站名(如「臺南」)
+  /* 可比較表現(母體:全部設備近 90 個臺北時區日曆日)。報告用百分位,不用名次。 */
+  percentile?: number       // 本設備指數高於百分之幾的可比較設備
+}
+
+/* WHO PM2.5 年均指引值,用於分數卡對照 chip */
+export const WHO_PM25_GUIDELINE = 15
+
+/* ── 對外報告產出的揭露閘門 ────────────────────────────────────────────
+ * 規則來源:AirCare 分群規則 v2 §4.2「揭露資格 = AirCare 分數 ≥ 75 且資料有效」。
+ *
+ * ⚠ 這是接上報告產出引擎前的「前端暫時護欄」。正式版這道判斷必須放在引擎裡 ——
+ *   報告是快照 + token 派送,一旦產出就收不回來,不能靠前端擋。
+ *   前端這份只是避免現在誤按。
+ */
+export const REPORT_DISCLOSURE_MIN_SCORE = 75
+
+export type ReportGateState = 'ready' | 'blocked' | 'unverified'
+export interface ReportGate {
+  state: ReportGateState
+  reason: string
+  kind: 'consumer' | 'facility'   // report.schema.json 的 report_kind
+}
+
+export function reportGateOf(d: FieldDetail): ReportGate {
+  const kind: ReportGate['kind'] = d.spaceType === '居家' ? 'consumer' : 'facility'
+  const s = d.airScore
+
+  /* ① 分數來源本身有已知缺陷 → 連門檻都不該拿來判。
+   *    偵測條件:濕度分數為 0 但期間確實有濕度讀數(平均 > 0)。
+   *    C2026010088 與 1cdbd4f6ac40 兩台都命中。 */
+  if (s.humidityScore === 0 && s.humidityAvg > 0) {
+    return {
+      state: 'unverified', kind,
+      reason: `濕度分數為 0 但平均濕度 ${s.humidityAvg}%,指數 ${s.total} 不可信 · 產出前需中台確認`,
+    }
+  }
+  /* ② 分數有效但未達揭露門檻 */
+  if (s.total < REPORT_DISCLOSURE_MIN_SCORE) {
+    return {
+      state: 'blocked', kind,
+      reason: `指數 ${s.total} 未達揭露門檻 ${REPORT_DISCLOSURE_MIN_SCORE} 分`,
+    }
+  }
+  return {
+    state: 'ready', kind,
+    reason: `指數 ${s.total} 已達揭露門檻 · 將產出${kind === 'consumer' ? '家庭版' : '場域版'}報告`,
+  }
+}
+
 export interface FieldDetail {
   fid: string                       // SH-xxxx
   // 會員資訊
@@ -417,6 +557,11 @@ export interface FieldDetail {
   memberSince: string               // 入會起算
   memberDevices: number             // 跨場域總設備數
   memberLink?: string               // 跳 Module B 連結 (mock)
+  /* 客戶編號(設備分析報告的 customer.code = SF Contact.LeadNum__c)。
+   * 這是場域 ↔ Salesforce 會員的唯一接點:識別卡拿它即時查 SF 取姓名,
+   * 並可直接開 Module B 的 Live 360°。姓名/Contact Id 一律不落地在 repo。
+   * 示範場域沒有對應 SF 記錄 → 留空,卡片不可點。 */
+  customerCode?: string
   // 場域屬性
   area: string                      // 詳細地址
   spaceType: string                 // 居家 / 辦公 / 醫療 / 商業
@@ -428,6 +573,8 @@ export interface FieldDetail {
   dhi: number
   dhiDelta: number
   cat: CatId
+  // AirCare 指數(可拆組成 + 對照基準),場域詳情三分數卡來源
+  airScore: AirScore
   // 即時狀態 (KPI 卡來源)
   pm25Now: number
   pm25Tier: 'excellent' | 'good' | 'fair' | 'poor'
@@ -440,12 +587,15 @@ export interface FieldDetail {
   hoursAvg7: number
   // 設備清單
   devices: FieldDeviceUnit[]
-  // 耗材(取所有機器加權平均殘量)
-  consumables: FieldConsumable[]
+  /* 耗材已改掛在 devices[].consumables(報告顆粒度＝一台設備一份);
+   * 場域層只保留「最近一次維護到期」這種彙總欄位。 */
   nextMaintenance: { item: string; days: number }
   // 90 天 PM2.5(每日)
-  pm25Trend: number[]               // 室內 PM2.5
-  pm25OutdoorTrend: number[]        // 室外 PM2.5(示意)
+  pm25Trend: number[]               // 室內 PM2.5 日均
+  pm25OutdoorTrend: number[]        // 室外參考測站日均
+  /* 日 P95 與單日最大。只有真實報告有,示範資料沒有 → 選填,缺少時趨勢圖退回雙層。 */
+  pm25P95Trend?: number[]
+  pm25MaxTrend?: number[]
   pm25P50: number
   pm25P90: number
   pm25Events: { dayIdx: number; pm: number; label: string; reaction: string }[]
@@ -527,6 +677,19 @@ export const FIELD_DETAIL_WANG: FieldDetail = {
   dhi: 48,
   dhiDelta: -12,
   cat: '6',
+  /* 總分刻意等於 dhi(48),避免詳情頁與場域清單/整體層出現兩個不同的分數。
+   * 組成:PM2.5 62.0 × 50% + 濕度 34.0 × 50% = 48.0 → 濕度是被拉低的主因。 */
+  airScore: {
+    total: 48.0,
+    pm25Score: 62.0,
+    humidityScore: 34.0,
+    pm25Avg: 22.4,
+    humidityAvg: 78.0,
+    humidityP90: 84.0,
+    humidityOver65Pct: 91.4,
+    outdoorPm25Avg: 68.2,
+    outdoorStation: '西屯',
+  },
   pm25Now: 84,
   pm25Tier: 'poor',
   temp: 28.2,
@@ -536,23 +699,24 @@ export const FIELD_DETAIL_WANG: FieldDetail = {
   totalDevices: 10,
   hoursToday: 6.1,
   hoursAvg7: 5.8,
+  /* 6 台裝置各自的耗材狀態。usedHours 依序為 [前置, ECF左, ECF右, HEPA, 電漿];
+   * 在線率高的機台(A/B/C)累積時數多、剩餘少,離線的 E/F 幾乎沒消耗。 */
   devices: [
-    { id: 'AC-PRO-2841-A', model: 'CS100 旗艦',  room: '辦公主區',  status: 'alert',   uptimePct: 82, hoursToday: 8.4 },
-    { id: 'AC-PRO-2841-B', model: 'CS100 旗艦',  room: '會議室 A',  status: 'online',  uptimePct: 96, hoursToday: 4.2 },
-    { id: 'AC-PRO-2841-C', model: 'CS80 標準',   room: '會議室 B',  status: 'online',  uptimePct: 91, hoursToday: 5.6 },
-    { id: 'AC-PRO-2841-D', model: 'CS80 標準',   room: '茶水間',    status: 'online',  uptimePct: 88, hoursToday: 3.8 },
-    { id: 'AC-PRO-2841-E', model: 'CS60 入門',   room: '主管室',    status: 'offline', uptimePct: 12, hoursToday: 0   },
-    { id: 'AC-PRO-2841-F', model: 'CS60 入門',   room: '走道',      status: 'offline', uptimePct: 34, hoursToday: 0   },
+    { id: 'AC-PRO-2841-A', model: 'CS100 旗艦', room: '辦公主區', status: 'alert',   uptimePct: 82, hoursToday: 8.4,
+      consumables: makeConsumables(CONSUMABLE_BASE_DATE, [1937, 3767, 3898, 5431, 3154]) },
+    { id: 'AC-PRO-2841-B', model: 'CS100 旗艦', room: '會議室 A', status: 'online',  uptimePct: 96, hoursToday: 4.2,
+      consumables: makeConsumables(CONSUMABLE_BASE_DATE, [2094, 4102, 4038, 6218, 3702]) },
+    { id: 'AC-PRO-2841-C', model: 'CS80 標準',  room: '會議室 B', status: 'online',  uptimePct: 91, hoursToday: 5.6,
+      consumables: makeConsumables(CONSUMABLE_BASE_DATE, [1682, 3341, 3402, 4886, 2740]) },
+    { id: 'AC-PRO-2841-D', model: 'CS80 標準',  room: '茶水間',   status: 'online',  uptimePct: 88, hoursToday: 3.8,
+      consumables: makeConsumables(CONSUMABLE_BASE_DATE, [1418, 2269, 2311, 4104, 2286]) },
+    { id: 'AC-PRO-2841-E', model: 'CS60 入門',  room: '主管室',   status: 'offline', uptimePct: 12, hoursToday: 0,
+      consumables: makeConsumables(CONSUMABLE_BASE_DATE, [ 402,  688,  702, 1415,  946]) },
+    { id: 'AC-PRO-2841-F', model: 'CS60 入門',  room: '走道',     status: 'offline', uptimePct: 34, hoursToday: 0,
+      consumables: makeConsumables(CONSUMABLE_BASE_DATE, [ 861, 1502, 1544, 2418, 1602]) },
   ],
-  consumables: [
-    { k: 'pre',    nm: '前置濾網',   sub: 'Pre-Filter',     pct: 22, daysLeft: 12, life: '90 天',    status: 'critical' },
-    { k: 'ecfL',   nm: 'ECF · 左',  sub: 'Electrostatic L', pct: 14, daysLeft: 7,  life: '180 天',   status: 'critical' },
-    { k: 'ecfR',   nm: 'ECF · 右',  sub: 'Electrostatic R', pct: 11, daysLeft: 6,  life: '180 天',   status: 'critical' },
-    { k: 'hepa',   nm: 'HEPA',     sub: '主濾網',          pct: 38, daysLeft: 28, life: '365 天',   status: 'soon' },
-    { k: 'plasma', nm: '電漿模組',  sub: 'Plasma',          pct: 64, daysLeft: 65, life: '730 天',   status: 'watch' },
-    { k: 'uv',     nm: 'UV 負離子', sub: 'UV-C',            pct: 78, daysLeft: 142, life: '1,095 天', status: 'ok' },
-  ],
-  nextMaintenance: { item: 'ECF·R', days: 6 },
+  /* 全場域最急的一項 = B 機前置濾網(剩 138h ÷ 8.55h/日 ≈ 16 天),與 devices[].consumables 對齊 */
+  nextMaintenance: { item: '前置濾網 · B 機', days: 16 },
   pm25Trend: WANGWANJEN_PM25_INDOOR,
   pm25OutdoorTrend: WANGWANJEN_PM25_OUTDOOR,
   pm25P50: 18,
@@ -570,7 +734,7 @@ export const FIELD_DETAIL_WANG: FieldDetail = {
     { date: '2026/05/27', time: '14:08', kind: 'alarm',   title: 'E4 警報 · 主管室機',   detail: 'AC-PRO-2841-E 通訊異常 · 連續 3 小時離線', reaction: '已自動觸發客服派工流程' },
     { date: '2026/05/24', time: '09:13', kind: 'spike',   title: 'PM2.5 飆升 · 工地揚塵', detail: '室外 PM2.5 達 188 · 室內 87 · 持續 23 分', reaction: '機器自動切高速 · 23 分鐘降至 22' },
     { date: '2026/05/22', time: '04:57', kind: 'tank',    title: '水箱已滿 · 茶水間機',   detail: '連續 36 小時未倒水 · 觸發 E2', reaction: '客戶 8.4h 後處理' },
-    { date: '2026/05/18',                kind: 'service', title: 'HEPA 更換提醒已寄送',   detail: 'ECF·L/R 剩 < 15% · 預估 7 天到期', reaction: '客戶尚未回覆' },
+    { date: '2026/05/18',                kind: 'service', title: '耗材更換提醒已寄送',   detail: 'B 機前置濾網剩 6.2% · 預估 16 天耗盡', reaction: '客戶尚未回覆' },
     { date: '2026/05/11', time: '11:42', kind: 'spike',   title: 'PM2.5 飆升',           detail: '室外 PM2.5 達 142 · 室內 56',     reaction: '機器自動切高速 · 14 分鐘降至 18' },
     { date: '2026/05/08', time: '19:13', kind: 'alarm',   title: 'E4 + dEF 警報 · 走道機', detail: 'AC-PRO-2841-F 重複觸發', reaction: '客戶手動重啟 · 恢復後再觸發 2 次' },
     { date: '2026/04/26', time: '15:22', kind: 'spike',   title: 'PM2.5 飆升',           detail: '室外 PM2.5 達 142 · 室內 56',     reaction: '機器自動切高速 · 18 分鐘降至 22' },
@@ -580,14 +744,146 @@ export const FIELD_DETAIL_WANG: FieldDetail = {
   aiCauses: [
     { rank: '①', cause: '工業區地段 · 室外 PM2.5 P90 達 162 · 機器長期滿載',           action: '推薦升級 CS100 一體機(雙功能對抗濕氣 + 空污)· 客單 12–18K' },
     { rank: '②', cause: '主管室 / 走道機長期離線 · 上次定保韌體升級失敗',                action: '安排技師到府:檢查通訊模組 + 重新升級韌體' },
-    { rank: '③', cause: 'ECF·L/R 雙側剩 < 15% · 預估 7 天到期 · HEPA 後續 28 天',         action: '立即批次出貨耗材 + 推送「自動配送訂閱」(歷史接受率 38%)' },
+    { rank: '③', cause: 'A 機 ECF·L/R 雙側剩 < 15%、B 機前置濾網 16 天內耗盡',              action: '立即批次出貨耗材 + 推送「自動配送訂閱」(歷史接受率 38%)' },
   ],
   cohortSize: 36,
   cohortRank: 31,
   cohortAvg: 56,
 }
 
-/* 場域 id → FieldDetail。其他場域沿用同份 mock 但替換 identity(展示用) */
+/* ══ 真實設備報告 → FieldDetail ═══════════════════════════════════════════
+ * 每台真實設備由 src/mocks/devices/ 的報告資料建出一筆 FieldDetail。
+ * 報告沒有的欄位(坪數/住宅型態/同住成員)一律留空,不補假值。
+ * 客戶姓名只有 C2026010088 對得到 Salesforce,其餘用客戶編號顯示。 */
+
+/* 由真實日均序列取百分位(描述統計,非業務邏輯) */
+const pctl = (arr: number[], p: number): number => {
+  const s = [...arr].sort((a, b) => a - b)
+  return Math.round(s[Math.min(s.length - 1, Math.floor((s.length - 1) * p))] * 10) / 10
+}
+
+/* 報告的緊急度文字 → 內部 status。直接採用報告判定,不自行重算。 */
+const URGENCY_MAP: Record<string, FieldConsumable['status']> = {
+  立即處理: 'critical', 近期處理: 'soon', 持續觀察: 'watch', 更換備料: 'ok',
+}
+const PART_META: Record<string, { k: string; sub: string; clr: string }> = {
+  前置濾網: { k: 'pre',    sub: 'Pre-Filter',      clr: '#16A085' },
+  'ECF 左': { k: 'ecfL',   sub: 'Electrostatic L', clr: '#4F46E5' },
+  'ECF 右': { k: 'ecfR',   sub: 'Electrostatic R', clr: '#7C3AED' },
+  HEPA:     { k: 'hepa',   sub: '主濾網',          clr: '#0E7A66' },
+  電漿模組:  { k: 'plasma', sub: 'Plasma',          clr: '#D97706' },
+}
+
+/** 報告的分群落點 → 六大類型 id */
+const SEGMENT_TO_CAT: Record<string, CatId> = {
+  金級空氣: '1', 銀級空氣: '2', 銅級空氣: '3',
+  濕度風險: '4', 清淨風險: '5', 清淨除濕雙風險: '6',
+}
+
+function fieldDetailFromReport(r: DeviceReport): FieldDetail {
+  const m = r.meta
+  const avgs = r.daily.map((d) => d.avg)
+  const runState = (label: string) => r.runStates.find((x) => x.label === label)?.hours ?? 0
+  const tankStop = runState('水滿停機')
+  const run = runState('正常運轉')
+  /* 最急的一項耗材(剩餘 % 最低)作為場域層的「維護倒數」 */
+  const worst = [...r.consumables].sort((a, b) => a.remainingPct - b.remainingPct)[0]
+  const switches = r.manualActions
+    .filter((a) => a.action === '模式/風速切換').reduce((s, a) => s + a.count, 0)
+  const actTotal = r.manualActions.reduce((s, a) => s + a.count, 0)
+
+  return {
+    fid: deviceFieldId(m.mac),
+    /* 姓名留空 —— 由識別卡用 customerCode 即時向 SF 取,repo 不存個資。 */
+    memberName: '',
+    memberTier: 'n',
+    memberSince: '—',
+    memberDevices: 1,
+    customerCode: m.customerCode,
+    area: m.address,
+    spaceType: '居家',
+    floorSize: 0, homeStyle: '', members: '',
+    acquisition: '',
+    dhi: Math.round(m.airScore),
+    dhiDelta: 0,                                  // 首份報告,無上期可比
+    cat: SEGMENT_TO_CAT[m.segment] ?? '1',
+    airScore: {
+      total: m.airScore, pm25Score: m.pm25Score, humidityScore: m.humidityScore,
+      pm25Avg: m.pm25Avg, humidityAvg: m.humidityAvg, humidityP90: m.humidityP90,
+      humidityOver65Pct: m.humidityOver65Pct,
+      outdoorPm25Avg: m.outdoorPm25Avg, outdoorStation: m.outdoorStation,
+      percentile: m.percentileAirScore,
+    },
+    pm25Now: r.daily[r.daily.length - 1].avg,     // 期末最後一日日均
+    pm25Tier: 'excellent',
+    temp: Math.round((m.tempMin + m.tempMax) / 2 * 10) / 10,
+    humidity: m.humidityAvg,
+    comfort: '多數時間落在相對舒適範圍',
+    onlineDevices: 1, totalDevices: 1,
+    hoursToday: Math.round(m.runHours / m.days * 10) / 10,
+    hoursAvg7: Math.round(m.runHours / m.days * 10) / 10,
+    devices: [{
+      id: m.mac, model: m.model || 'CS101', room: '住家', status: 'online',
+      uptimePct: Math.round(m.runHours / (m.days * 24) * 100),
+      hoursToday: Math.round(m.runHours / m.days * 10) / 10,
+      consumables: r.consumables.map((c) => {
+        const pm = PART_META[c.label]
+        return {
+          k: pm.k, nm: c.label, sub: pm.sub, clr: pm.clr,
+          remainHours: c.remainingHours, usedHours: c.hoursUsed, capHours: c.hoursMax,
+          pct: c.remainingPct, dailyBurnHours: c.dailyBurn, daysLeft: c.daysLeft,
+          exhaustDate: c.exhaustDate, status: URGENCY_MAP[c.urgency] ?? 'watch',
+        }
+      }),
+    }],
+    nextMaintenance: { item: worst.label, days: Math.round(worst.daysLeft) },
+    pm25Trend: avgs,
+    pm25OutdoorTrend: r.outdoorDaily,
+    pm25P95Trend: r.daily.map((d) => d.p95),
+    pm25MaxTrend: r.daily.map((d) => d.max),
+    pm25P50: pctl(avgs, 0.5),
+    pm25P90: pctl(avgs, 0.9),
+    pm25Events: r.peakHours.map((p) => ({
+      dayIdx: Math.max(0, r.daily.findIndex((d) => d.d === p.at.slice(0, 10))),
+      pm: p.max,
+      label: `${p.at.slice(5, 10)} ${p.at.slice(11, 16)} ${p.slot} · 時均 ${p.avg}`,
+      reaction: `單日最大 ${p.max} µg/m³ · 等級${p.level}`,
+    })),
+    tempTrend: r.daily.map((d) => d.temp),
+    humidityTrend: r.daily.map((d) => d.humidity),
+    weekUsage: r.weekUsage,
+    workdayPeak: `高基線最明顯時段:${m.diurnalPeakSlot}(P95 ${m.diurnalPeakP95} µg/m³)· 尖峰日 ${m.peakDay}`,
+    timeline: [
+      { date: m.lastAlarmAt.slice(0, 10).replace(/-/g, '/'), time: m.lastAlarmAt.slice(11, 16),
+        kind: 'alarm', title: '最近警報狀態時間',
+        detail: `警報碼 ${m.lastAlarmCode} · 期間曾少次或短暫出現警報,最近狀態已解除`,
+        reaction: '報告判定:不逐碼列舉' },
+      { date: m.peakDay.replace(/-/g, '/'), kind: 'spike', title: '本期尖峰日',
+        detail: `日均 ${m.peakDayAvg} · 單日最大 ${m.peakDayMax} µg/m³`,
+        reaction: '報告建議:對異常尖峰保持中立追蹤' },
+    ],
+    aiSummary: `本期 Aircare 指數 ${m.airScore}/100(PM2.5 ${m.pm25Score} × 50% + 濕度 ${m.humidityScore} × 50%)。` +
+      `較需關注的耗材為 ${worst.label}(剩 ${worst.remainingPct}%)。` +
+      `水滿停機累積 ${tankStop}h,正常運轉 ${run}h。`,
+    aiCauses: [
+      { rank: '①', cause: `水滿停機 ${tankStop}h vs 正常運轉 ${run}h · 解除等待 P90 ${r.tank.p90WaitHours} 小時`,
+        action: '報告建議:檢查倒水頻率或排水流程,以維持除濕連續性' },
+      { rank: '②', cause: `${worst.label} 剩餘 ${worst.remainingPct}% · 預估 ${Math.round(worst.daysLeft)} 天耗盡(${worst.exhaustDate})`,
+        action: '報告建議:優先處理,其餘濾網維持例行追蹤' },
+      { rank: '③', cause: `模式/風速切換 ${switches.toLocaleString()} 次,佔全部人為操作 ${(switches / actTotal * 100).toFixed(1)}%`,
+        action: '使用者高頻手動調整,自動模式可能未滿足需求 —— 產品端訊號,非服務工單' },
+    ],
+    cohortSize: 0, cohortRank: 0, cohortAvg: 0,   // 報告用百分位,不用名次
+  }
+}
+
+export const DEVICE_FIELD_DETAILS: FieldDetail[] = DEVICE_REPORTS.map(fieldDetailFromReport)
+
+/* 場域 id → FieldDetail。真實設備從報告建出,其餘 8 個示範場域沿用 mock 骨架替換 identity。 */
 export const FIELD_DETAILS: Record<string, FieldDetail> = {
+  ...Object.fromEntries(DEVICE_FIELD_DETAILS.map((d) => [d.fid, d])),
   'SH-2841': FIELD_DETAIL_WANG,
 }
+
+/** fallback 骨架:示範場域沒有真實序列,借第一台真實設備的曲線 */
+export const FIELD_DETAIL_C88 = DEVICE_FIELD_DETAILS[0]
