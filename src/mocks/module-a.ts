@@ -887,3 +887,42 @@ export const FIELD_DETAILS: Record<string, FieldDetail> = {
 
 /** fallback 骨架:示範場域沒有真實序列,借第一台真實設備的曲線 */
 export const FIELD_DETAIL_C88 = DEVICE_FIELD_DETAILS[0]
+
+/** 場域 id → FieldDetail(找不到真實資料時,用該場域的清單欄位改寫 fallback 骨架)。
+ *  放在資料層而非元件層,讓場域清單與場域詳情共用同一份判斷(報告揭露閘門也吃這份)。 */
+export function getFieldDetail(fid: string): FieldDetail {
+  const real = FIELD_DETAILS[fid]
+  if (real) return real                       // 有完整資料的場域(目前只有三台真實設備 + SH-2841)
+  const rec = FIELDS_A_FULL.find((f) => f.id === fid)
+  if (!rec) return FIELD_DETAIL_C88
+  /* 總分跟著該場域的 q 走,並回推兩項組成,避免詳情頁分數與清單/整體層打架。
+   * 兩項都必須落在 0–100 且平均等於 total:PM2.5 取 min(100, total+8),濕度補足差額。
+   * (舊寫法 humidityScore = total-14 會讓高分場域算出 PM2.5 > 100,例如 q=92 → 106。) */
+  const total = rec.q
+  const pm25Score = Math.min(100, total + 8)
+  const humidityScore = Math.round((total * 2 - pm25Score) * 10) / 10
+  return {
+    ...FIELD_DETAIL_C88,
+    fid: rec.id,
+    memberName: rec.customerName,
+    memberTier: rec.tier === 'g' ? 'g' : 'n',
+    area: rec.addr,
+    spaceType: rec.type,
+    floorSize: rec.sz,
+    dhi: rec.q,
+    dhiDelta: FIELD_DELTAS[rec.id] ?? 0,
+    cat: rec.cat,
+    airScore: {
+      ...FIELD_DETAIL_C88.airScore,
+      total,
+      pm25Score,
+      humidityScore,
+      pm25Avg: rec.pm,
+      outdoorPm25Avg: FIELD_OUTDOOR_PM25[rec.id] ?? FIELD_DETAIL_C88.airScore.outdoorPm25Avg,
+    },
+    pm25Now: rec.pm,
+    onlineDevices: parseInt(rec.dev.split('/')[0]),
+    totalDevices: parseInt(rec.dev.split('/')[1]),
+    hoursToday: rec.hrs,
+  }
+}

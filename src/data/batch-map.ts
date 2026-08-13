@@ -51,6 +51,7 @@ export const BATCH_MAP: Record<string, BatchTag> = {
   'A.整體.區域熱圖': { batch: 'p1', source: '#6 IoT', note: '接 IoT' },
   'A.整體.場域明細表': { batch: 'p1', source: '#6 IoT + #1 SF', note: '接 IoT + SF' },
   'A.分群.空品濕度分布': { batch: 'p1', source: '#6 IoT', note: '接 IoT' },
+  'A.場域清單.報告產製': { batch: 'p2', source: '#6 IoT + #1 SF + 報告引擎', note: '九態/輪廓/寄發需報告產出引擎回填' },
   'A.個人.場域詳情': { batch: 'p2', source: '#6 IoT + #3 ERP', note: '耗材/水箱需 ERP，延後' },
   'A.個人.耗材庫存': { batch: 'p2', source: '#3 ERP', note: 'ERP 進銷存待確認' },
   'A.個人.水箱管理': { batch: 'p2', source: '#3 ERP', note: 'ERP 進銷存待確認' },

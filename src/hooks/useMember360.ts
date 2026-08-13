@@ -70,39 +70,106 @@ export interface Member360 {
 const API_BASE: string =
   (import.meta as { env?: Record<string, string> }).env?.VITE_MIDDLE_API ?? 'http://localhost:8000'
 
+/* ── 客戶編號 → 會員 的 session 快取 ──────────────────────────────────
+ * 比對過就記住,同一個編號在這次工作階段內只查一次(場域清單 12 列 + 反覆切換
+ * 場域詳情原本會重複打中台)。
+ *
+ * ⚠ 只放記憶體,不寫 localStorage/sessionStorage —— 姓名是個資,落到磁碟就違反
+ *   AGENTS.md §7。重新整理頁面即清空,這是刻意的。
+ * ⚠ 中台未連線時也會快取 null(否則清單每次 render 都重打一輪);中台起來後
+ *   重整頁面或呼叫 clearMemberCache() 即可重查。 */
+const memberCache = new Map<string, MemberHit | null>()
+const memberInflight = new Map<string, Promise<MemberHit | null>>()
+
+/** 清掉姓名快取(中台從離線變上線、或要強制重查時用) */
+export function clearMemberCache(): void {
+  memberCache.clear()
+  memberInflight.clear()
+}
+
+/** 單一編號解析:走快取 → 進行中的請求 → 才真的打中台。
+ * 中台對客戶編號是「前綴」比對,可能撈到同批多筆 → 只取 lead_num 完全相等那筆,
+ * 沒有完全相等的就回 null(寧可不顯示,也不猜)。 */
+function fetchMemberByCode(code: string): Promise<MemberHit | null> {
+  if (memberCache.has(code)) return Promise.resolve(memberCache.get(code)!)
+  const running = memberInflight.get(code)
+  if (running) return running
+
+  const p = fetch(`${API_BASE}/api/members?q=${encodeURIComponent(code)}`)
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((d: { members: MemberHit[] }) => d.members.find(m => m.lead_num === code) ?? null)
+    .catch(() => null)  // 中台未連線:呼叫端退回只顯示客戶編號
+    .then(m => {
+      memberCache.set(code, m)
+      memberInflight.delete(code)
+      return m
+    })
+  memberInflight.set(code, p)
+  return p
+}
+
 /** 依客戶編號解析單一會員(Module A 場域詳情用)。
  *
  * 走 /api/members?q= 而不是把 Contact Id + 姓名寫死在前端 mock:
  *   ① 姓名是個資,本 repo 不留;報告本來就有客戶編號,拿編號換身分即可
  *   ② Salesforce 才是身分的真相來源,改名/換電話不必動程式碼
- * 中台對客戶編號是「前綴」比對,可能撈到同批多筆 → 只取 lead_num 完全相等那筆,
- * 沒有完全相等的就回 null(寧可不顯示,也不猜)。
  *
- * 結果連同「當初查的編號」一起存,loading 由 res.code !== c 推導 ——
- * 這樣 effect 裡不需要同步 setState(避免 cascading render),
- * 切換場域時也不會先閃一下上一位客戶的姓名。 */
+ * member/loading 都由「當前編號在不在快取裡」推導 —— effect 裡不做同步 setState
+ * (避免 cascading render),切換場域時也不會先閃一下上一位客戶的姓名。 */
 export function useMemberByCode(code: string | null | undefined): { member: MemberHit | null; loading: boolean } {
   const c = (code ?? '').trim()
-  const [res, setRes] = useState<{ code: string; member: MemberHit | null } | null>(null)
+  const [, bump] = useState(0)
 
   useEffect(() => {
-    if (c.length < 2) return
+    if (c.length < 2 || memberCache.has(c)) return
     let alive = true
-    fetch(`${API_BASE}/api/members?q=${encodeURIComponent(c)}`)
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d: { members: MemberHit[] }) => {
-        if (alive) setRes({ code: c, member: d.members.find(m => m.lead_num === c) ?? null })
-      })
-      .catch(() => {
-        if (alive) setRes({ code: c, member: null }) // 中台未連線:呼叫端退回只顯示客戶編號
-      })
+    fetchMemberByCode(c).then(() => {
+      if (alive) bump(n => n + 1)
+    })
     return () => {
       alive = false
     }
   }, [c])
 
-  const settled = res?.code === c
-  return { member: settled ? res.member : null, loading: c.length >= 2 && !settled }
+  const settled = c.length < 2 || memberCache.has(c)
+  return { member: memberCache.get(c) ?? null, loading: !settled }
+}
+
+/** 一次解析一批客戶編號(場域清單當頁預解析用)。
+ *
+ * 中台目前沒有批次端點,只能逐筆打 /api/members?q=,所以限制同時 4 筆,
+ * 且只查「還沒在快取裡」的編號。等中台加上批次端點(見 plan 的下一步)後,
+ * 這個 hook 內部換成一次呼叫即可,呼叫端不用改。 */
+const MEMBER_FETCH_CONCURRENCY = 4
+
+export function useMembersByCodes(codes: string[]): { byCode: Record<string, MemberHit | null>; resolving: boolean } {
+  const [, bump] = useState(0)
+  const key = codes.join(',')
+
+  useEffect(() => {
+    const queue = codes.filter(c => c.length >= 2 && !memberCache.has(c))
+    if (!queue.length) return
+    let alive = true
+    const pull = async () => {
+      for (let c = queue.shift(); c; c = queue.shift()) {
+        await fetchMemberByCode(c)
+        if (!alive) return
+        bump(n => n + 1)
+      }
+    }
+    void Promise.all(
+      Array.from({ length: Math.min(MEMBER_FETCH_CONCURRENCY, queue.length) }, pull),
+    )
+    return () => {
+      alive = false
+    }
+    // codes 以 join 後的字串當依賴,避免每次 render 產生新陣列就重跑
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+
+  const byCode: Record<string, MemberHit | null> = {}
+  for (const c of codes) byCode[c] = memberCache.get(c) ?? null
+  return { byCode, resolving: codes.some(c => c.length >= 2 && !memberCache.has(c)) }
 }
 
 /** 會員搜尋:q 至少 2 字才打 API,輸入停頓 300ms 後查詢。 */

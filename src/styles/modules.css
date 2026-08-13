@@ -3688,6 +3688,11 @@
   color: var(--as-ink-2);
 }
 .rowbtn:hover { background: var(--as-bg); color: var(--as-ink); }
+/* 操作欄的文字型按鈕(場域清單:一鍵產製 / 核准 / 寄發…) */
+.rowbtn.on { background: var(--as-primary); border-color: var(--as-primary); color: #fff; font-weight: 600; }
+.rowbtn.on:hover { background: var(--as-primary-hover); border-color: var(--as-primary-hover); color: #fff; }
+.rowbtn:disabled { cursor: not-allowed; }
+.rowbtn:disabled:hover { background: #fff; color: var(--as-ink-2); }
 
 /* ============================================================== */
 /* G Referral — tiers + leaderboard                                */

@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>克立淨 AIRCARE 報告產製 Dashboard — 流程與版面示意</title>
+<style>
+  :root{
+    --bg:#f4f7f6;
+    --ink:#16302b;
+    --ink-soft:#4a5d58;
+    --line:#dde6e3;
+    --card:#ffffff;
+    --green:#1f9d78;      /* 主色 / A·B 雙核 */
+    --green-soft:#e6f5ef;
+    --purple:#7c5cbf;     /* 支援模組 */
+    --purple-soft:#efeafa;
+    --orange:#e0862a;     /* AI 中心 */
+    --orange-soft:#fbeed9;
+    --red:#d1495b;        /* 主動接觸循環 / 警示 */
+    --red-soft:#fbe6e9;
+    --blue:#2f74b5;
+    --blue-soft:#e4eff7;
+    --grey:#8a9995;
+    --grey-soft:#eef2f1;
+    --gold:#c99a2e;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px 90px}
+  header.top{
+    background:linear-gradient(135deg,#12463a,#1f9d78);color:#fff;padding:38px 22px 30px;margin-bottom:8px;
+  }
+  header.top .inner{max-width:1120px;margin:0 auto}
+  .kicker{font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.85;margin:0 0 8px}
+  header.top h1{margin:0;font-size:30px;line-height:1.25;font-weight:800}
+  header.top p{margin:12px 0 0;max-width:760px;opacity:.94;font-size:15px}
+  .tagbar{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .tagbar span{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);padding:5px 12px;border-radius:999px;font-size:12.5px}
+
+  section{margin-top:40px}
+  .sec-head{display:flex;align-items:baseline;gap:12px;border-bottom:2px solid var(--green);padding-bottom:8px;margin-bottom:20px}
+  .sec-no{background:var(--green);color:#fff;font-weight:800;font-size:14px;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none}
+  .sec-head h2{margin:0;font-size:21px;font-weight:800}
+  .sec-head .sub{margin-left:auto;color:var(--grey);font-size:13px;align-self:center}
+
+  p.lead{color:var(--ink-soft);font-size:15px;margin:0 0 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,48,43,.04)}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  @media(max-width:820px){.grid3,.grid2{grid-template-columns:1fr}}
+
+  .why{border-left:4px solid var(--green)}
+  .why h3{margin:0 0 6px;font-size:16px}
+  .why p{margin:0;color:var(--ink-soft);font-size:14px}
+  .why .big{font-size:13px;color:var(--green);font-weight:700;letter-spacing:.04em}
+
+  /* flow */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0}
+  .step{background:#fff;border:1px solid var(--line);border-top:4px solid var(--green);border-radius:12px;padding:14px 16px;flex:1;min-width:150px;position:relative}
+  .step .n{font-size:12px;color:var(--green);font-weight:800;letter-spacing:.08em}
+  .step h4{margin:6px 0 4px;font-size:15px}
+  .step p{margin:0;font-size:12.5px;color:var(--ink-soft)}
+  .arrow{align-self:center;color:var(--green);font-size:22px;font-weight:800;padding:0 6px;flex:none}
+  @media(max-width:820px){.arrow{transform:rotate(90deg);width:100%;text-align:center;padding:4px 0}}
+  .step.alt{border-top-color:var(--purple)}
+  .step.alt .n{color:var(--purple)}
+  .step.send{border-top-color:var(--red)}
+  .step.send .n{color:var(--red)}
+
+  /* browser frame */
+  .browser{border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 10px 30px rgba(20,48,43,.10);background:#fff}
+  .bbar{background:#eef2f1;padding:9px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .dot.r{background:#f26d6d}.dot.y{background:#f4c542}.dot.g{background:#5bc98b}
+  .burl{margin-left:12px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:3px 12px;font-size:12px;color:var(--grey);flex:1}
+  .bbody{padding:18px}
+
+  .dash-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+  .dash-top h3{margin:0;font-size:17px;flex:1;min-width:180px}
+  .filter{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink-soft);cursor:default}
+  .chip.on{background:var(--green);color:#fff;border-color:var(--green)}
+
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+  @media(max-width:820px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--grey-soft);border-radius:10px;padding:12px 14px}
+  .kpi .v{font-size:22px;font-weight:800}
+  .kpi .l{font-size:12px;color:var(--grey)}
+  .kpi.a{background:var(--green-soft)}.kpi.a .v{color:var(--green)}
+  .kpi.b{background:var(--orange-soft)}.kpi.b .v{color:var(--orange)}
+  .kpi.c{background:var(--red-soft)}.kpi.c .v{color:var(--red)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{text-align:left;background:#12463a;color:#fff;padding:9px 10px;font-weight:600;white-space:nowrap;font-size:12px}
+  thead th:first-child{border-radius:8px 0 0 0}
+  thead th:last-child{border-radius:0 8px 0 0}
+  tbody td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:hover{background:#f7fbfa}
+  .cust{font-weight:700}
+  .code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--grey)}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
+  .t-child{background:var(--blue-soft);color:var(--blue)}
+  .t-senior{background:var(--purple-soft);color:var(--purple)}
+  .t-pet{background:var(--orange-soft);color:var(--orange)}
+  .t-general{background:var(--grey-soft);color:var(--ink-soft)}
+  .t-need{background:var(--red-soft);color:var(--red)}
+  .lvl{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+  .lvl .g{width:9px;height:9px;border-radius:50%}
+  .gold .g{background:var(--gold)}.silver .g{background:#9aa7ab}.bronze .g{background:#b9793f}
+  .status{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
+  .status .d{width:9px;height:9px;border-radius:50%;flex:none}
+  .s-red .d{background:var(--red)}.s-orange .d{background:var(--orange)}.s-green .d{background:var(--green)}
+  .s-blue .d{background:var(--blue)}.s-purple .d{background:var(--purple)}.s-done .d{background:#2f9e6f}
+  .s-sent .d{background:#0d7fa8}.s-open .d{background:var(--gold)}.s-late .d{background:#8a9995}
+  .need{color:var(--red);font-size:11.5px}
+  .ok-need{color:var(--grey);font-size:11.5px}
+  .btn{display:inline-block;font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--green);color:var(--green);background:#fff;margin:1px 0;white-space:nowrap;cursor:default}
+  .btn.solid{background:var(--green);color:#fff}
+  .btn.ghost{border-color:var(--line);color:var(--grey)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:var(--ink-soft)}
+  .legend div{display:flex;align-items:center;gap:6px}
+  .legend .d{width:9px;height:9px;border-radius:50%}
+
+  /* detail */
+  .crumb{font-size:12px;color:var(--grey);margin-bottom:10px}
+  .crumb b{color:var(--green)}
+  .cust-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .cust-head .name{font-size:19px;font-weight:800}
+  .cust-head .meta{font-size:12px;color:var(--grey)}
+  .device{border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+  .device .dh{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#f7fbfa;padding:12px 15px;border-bottom:1px solid var(--line)}
+  .device .dh .dn{font-weight:700;font-size:14px}
+  .device .db{padding:14px 15px}
+  .rep-tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .rt{font-size:12.5px;padding:6px 14px;border-radius:8px 8px 0 0;border:1px solid var(--line);border-bottom:none;background:#f4f7f6;color:var(--ink-soft);font-weight:600}
+  .rt.on{background:#fff;color:var(--green);border-top:3px solid var(--green);position:relative;top:1px}
+  .rt.cust.on{color:var(--red);border-top-color:var(--red)}
+  .panel{border:1px solid var(--line);border-radius:0 10px 10px 10px;padding:15px}
+  .panel h5{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .mini{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  @media(max-width:820px){.mini{grid-template-columns:repeat(2,1fr)}}
+  .mini .m{background:var(--grey-soft);border-radius:8px;padding:8px 10px}
+  .mini .m .mv{font-weight:800;font-size:15px}
+  .mini .m .ml{font-size:11px;color:var(--grey)}
+  .note{font-size:12px;color:var(--ink-soft);background:var(--green-soft);border-radius:8px;padding:9px 12px;margin:0 0 10px}
+  .note.red{background:var(--red-soft);color:#8a2f3b}
+  .send-panel{background:#fff;border:1px dashed var(--red);border-radius:10px;padding:14px;margin-top:10px}
+  .send-panel h5{color:var(--red)}
+  .send-opts{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .send-opt{flex:1;min-width:160px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12px}
+  .send-opt b{display:block;font-size:13px;margin-bottom:3px}
+  .track{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:11.5px}
+  .track .tk{background:var(--gold);color:#fff;padding:3px 9px;border-radius:999px;opacity:.9}
+  .track .tk.off{background:var(--grey-soft);color:var(--grey)}
+
+  /* status machine */
+  .sm{display:flex;flex-wrap:wrap;gap:10px}
+  .sm .node{flex:1;min-width:150px;border:1px solid var(--line);border-left:5px solid var(--green);border-radius:10px;padding:11px 13px;background:#fff}
+  .sm .node .st{display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px}
+  .sm .node .st .d{width:10px;height:10px;border-radius:50%}
+  .sm .node p{margin:6px 0 0;font-size:11.5px;color:var(--ink-soft)}
+
+  ol.sop{counter-reset:s;list-style:none;padding:0;margin:0}
+  ol.sop li{position:relative;padding:12px 0 12px 46px;border-bottom:1px solid var(--line)}
+  ol.sop li:last-child{border-bottom:none}
+  ol.sop li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:12px;width:30px;height:30px;background:var(--green);color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+  ol.sop li b{font-size:14.5px}
+  ol.sop li p{margin:3px 0 0;font-size:13px;color:var(--ink-soft)}
+  .role{font-size:11px;background:var(--purple-soft);color:var(--purple);padding:2px 8px;border-radius:6px;font-weight:600;margin-left:6px}
+
+  footer{margin-top:50px;text-align:center;color:var(--grey);font-size:12px;border-top:1px solid var(--line);padding-top:20px}
+  .fnote{font-size:12px;color:var(--grey);margin-top:8px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="inner">
+    <p class="kicker">CleanStation · AirSure 數據中台 · C 服務模組</p>
+    <h1>AIRCARE 報告產製 Dashboard</h1>
+    <p>一個讓業務／CS 人員能「一鍵、規模化」為每位客戶產出 90 天空氣健康報告的後台。從資料就緒判斷、內部技術版與客戶版雙報告產製,到 LINE OA／Email 寄發與成效追蹤,形成完整閉環。</p>
+    <div class="tagbar">
+      <span>一客戶 → 多設備 → 多報告</span>
+      <span>內部技術版(AK)＋ 客戶版雙產出</span>
+      <span>狀態機驅動</span>
+      <span>LINE OA / Email 寄發</span>
+      <span>開啟・分享・預約 MOT 追蹤</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- 1. 為什麼 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">1</span><h2>這個 Dashboard 要解決什麼</h2><span class="sub">概念 · 給主管</span></div>
+    <p class="lead">目前每份 AIRCARE 客戶報告都要人工逐一操作產製,無法規模化。這個 Dashboard 把「誰可以產報告、報告到哪一步、還缺什麼、寄了沒、有沒有被看」全部集中到一個畫面,讓報告從「一份一份手工做」變成「一整批穩定產出」。</p>
+    <div class="grid3">
+      <div class="card why">
+        <p class="big">規模化產製</p>
+        <h3>一鍵產出,不再逐份手工</h3>
+        <p>每位客戶進到清單就能看到是否「可產製」,一鍵同時備妥內部技術版與客戶版,業務不需要懂技術指標。</p>
+      </div>
+      <div class="card why">
+        <p class="big">內外雙報告</p>
+        <h3>內部看門道,客戶看身分</h3>
+        <p>內部技術版(AK)供服務對話與決策參考;客戶版是「身分背書的健康證書」,可截圖、可分享。</p>
+      </div>
+      <div class="card why">
+        <p class="big">閉環寄發</p>
+        <h3>寄得出去,追得到回饋</h3>
+        <p>報告連結可直接透過 LINE OA 或 Email 寄給客戶,並回收開啟率、分享率、掃碼預約率三個 MOT。</p>
+      </div>
+    </div>
+    <p class="fnote">策略定位:呼應「從家電品牌 → 台灣家庭空氣健康確定性」的品牌重構。報告不是資訊,是身分背書。</p>
+  </section>
+
+  <!-- 2. 整體流程 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">2</span><h2>端到端流程</h2><span class="sub">從資料就緒到客戶手上</span></div>
+    <p class="lead">綠色為產製主線,紫色為必要的人工判斷關卡,紅色為對外寄發與追蹤。</p>
+    <div class="flow">
+      <div class="step"><div class="n">STEP 1</div><h4>資料就緒判斷</h4><p>感測資料是否達 90 天門檻、分群是否成立。</p></div>
+      <div class="arrow">→</div>
+      <div class="step alt"><div class="n">STEP 2</div><h4>補齊客戶輪廓</h4><p>幼童／銀髮／寵物／過敏／一般,決定痛點與 CTA。</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">STEP 3</div><h4>產內部技術版(AK)</h4><p>完整指標、分群依據、服務建議軸,供內部審。</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">STEP 4</div><h4>一鍵產客戶版</h4><p>套 Q1_5 模板,技術數字翻成故事與身分標籤。</p></div>
+      <div class="arrow">→</div>
+      <div class="step alt"><div class="n">STEP 5</div><h4>預覽與核准</h4><p>對照交付檢查清單,人工核准放行。</p></div>
+      <div class="arrow">→</div>
+      <div class="step send"><div class="n">STEP 6</div><h4>LINE / Email 寄發</h4><p>推送連結或內容給客戶本人。</p></div>
+      <div class="arrow">→</div>
+      <div class="step send"><div class="n">STEP 7</div><h4>MOT 追蹤</h4><p>開啟・分享・掃碼預約回收。</p></div>
+    </div>
+  </section>
+
+  <!-- 3. 清單頁 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">3</span><h2>清單頁版面示意</h2><span class="sub">Dashboard 首頁</span></div>
+    <p class="lead">一位客戶一列;若客戶有多台設備、對應多份報告,展開後每台設備各一列(見「陳○琳」)。狀態燈號讓人一眼看出「誰可以馬上出、誰卡在缺資料、誰逾期該重出」。</p>
+
+    <div class="browser">
+      <div class="bbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="burl">airsure.cleanstation.internal / reports / dashboard</span></div>
+      <div class="bbody">
+        <div class="dash-top">
+          <h3>📋 報告產製清單</h3>
+          <div class="filter">
+            <span class="chip on">全部 128</span>
+            <span class="chip">可產製 34</span>
+            <span class="chip">待補輪廓 21</span>
+            <span class="chip">資料未達標 12</span>
+            <span class="chip">逾期待更新 9</span>
+          </div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi a"><div class="v">34</div><div class="l">可立即產製</div></div>
+          <div class="kpi"><div class="v">61</div><div class="l">本季已寄發</div></div>
+          <div class="kpi b"><div class="v">21</div><div class="l">待補客戶輪廓</div></div>
+          <div class="kpi c"><div class="v">9</div><div class="l">逾期待更新(>90天)</div></div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>客戶 / 代號</th><th>輪廓</th><th>設備</th><th>分群</th><th>資料涵蓋</th>
+              <th>報告狀態</th><th>待補內容</th><th>上次 / 到期</th><th>寄發</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="cust">王○家</div><div class="code">C2026020515</div></td>
+              <td><span class="tag t-child">幼童家庭</span></td>
+              <td>1 台</td>
+              <td><span class="lvl gold"><span class="g"></span>金級</span></td>
+              <td>90 / 90 天</td>
+              <td><span class="status s-green"><span class="d"></span>可產製</span></td>
+              <td><span class="ok-need">—</span></td>
+              <td>—<br><span class="code">首次</span></td>
+              <td><span class="status s-late" style="font-weight:600;color:var(--grey)">未寄</span></td>
+              <td><span class="btn solid">一鍵產製</span></td>
+            </tr>
+
+            <tr>
+              <td><div class="cust">陳○琳</div><div class="code">C2026011203</div></td>
+              <td><span class="tag t-senior">銀髮家庭</span></td>
+              <td><b>2 台</b> ▾</td>
+              <td><span class="lvl silver"><span class="g"></span>銀級</span></td>
+              <td>90 / 90 天</td>
+              <td><span class="status s-blue"><span class="d"></span>展開看各機</span></td>
+              <td><span class="ok-need">—</span></td>
+              <td>2026/05<br><span class="code">08/15 到期</span></td>
+              <td><span style="color:var(--grey)">分機</span></td>
+              <td><span class="btn ghost">展開</span></td>
+            </tr>
+            <tr style="background:#f7fbfa">
+              <td style="padding-left:26px"><span class="code">└ 客廳 CS-1</span></td>
+              <td colspan="2"><span class="code">設備 C..03-A</span></td>
+              <td><span class="lvl silver"><span class="g"></span>銀級</span></td>
+              <td>90 天</td>
+              <td><span class="status s-done"><span class="d"></span>已核准</span></td>
+              <td><span class="ok-need">—</span></td>
+              <td colspan="2"><span class="status s-open"><span class="d"></span>已開啟(LINE)</span></td>
+              <td><span class="btn">預覽</span> <span class="btn solid">已寄</span></td>
+            </tr>
+            <tr style="background:#f7fbfa">
+              <td style="padding-left:26px"><span class="code">└ 主臥 CS-2</span></td>
+              <td colspan="2"><span class="code">設備 C..03-B</span></td>
+              <td><span class="lvl bronze"><span class="g"></span>銅級</span></td>
+              <td>90 天</td>
+              <td><span class="status s-purple"><span class="d"></span>客戶版待審</span></td>
+              <td><span class="need">濕度敘事需複核</span></td>
+              <td colspan="2"><span style="color:var(--grey)">未寄</span></td>
+              <td><span class="btn">預覽</span> <span class="btn solid">核准</span></td>
+            </tr>
+
+            <tr>
+              <td><div class="cust">林○安</div><div class="code">C2026030877</div></td>
+              <td><span class="tag t-need">待補輪廓</span></td>
+              <td>1 台</td>
+              <td><span class="lvl gold"><span class="g"></span>金級</span></td>
+              <td>90 / 90 天</td>
+              <td><span class="status s-orange"><span class="d"></span>待補輪廓</span></td>
+              <td><span class="need">缺客戶輪廓 → 影響痛點/CTA</span></td>
+              <td>—</td>
+              <td><span style="color:var(--grey)">未寄</span></td>
+              <td><span class="btn">補輪廓</span></td>
+            </tr>
+
+            <tr>
+              <td><div class="cust">黃○宇</div><div class="code">C2026041199</div></td>
+              <td><span class="tag t-pet">寵物家庭</span></td>
+              <td>1 台</td>
+              <td><span class="lvl bronze"><span class="g"></span>銅級</span></td>
+              <td>52 / 90 天</td>
+              <td><span class="status s-red"><span class="d"></span>資料未達標</span></td>
+              <td><span class="need">尚差 38 天感測資料</span></td>
+              <td>—<br><span class="code">預估 09/20</span></td>
+              <td><span style="color:var(--grey)">—</span></td>
+              <td><span class="btn ghost">未達門檻</span></td>
+            </tr>
+
+            <tr>
+              <td><div class="cust">吳○婷</div><div class="code">C2025120044</div></td>
+              <td><span class="tag t-general">一般家庭</span></td>
+              <td>1 台</td>
+              <td><span class="lvl silver"><span class="g"></span>銀級</span></td>
+              <td>90 / 90 天</td>
+              <td><span class="status s-late"><span class="d"></span>逾期待更新</span></td>
+              <td><span class="need">距上次 96 天,建議出新季報</span></td>
+              <td>2025/11<br><span class="code">已逾期</span></td>
+              <td><span class="status s-open" style="font-weight:600">上季已開啟</span></td>
+              <td><span class="btn solid">產新季報</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="legend">
+          <div><span class="d" style="background:var(--red)"></span>資料未達標</div>
+          <div><span class="d" style="background:var(--orange)"></span>待補輪廓</div>
+          <div><span class="d" style="background:var(--green)"></span>可產製</div>
+          <div><span class="d" style="background:var(--blue)"></span>內部版已產</div>
+          <div><span class="d" style="background:var(--purple)"></span>客戶版待審</div>
+          <div><span class="d" style="background:#2f9e6f"></span>已核准</div>
+          <div><span class="d" style="background:#0d7fa8"></span>已寄發</div>
+          <div><span class="d" style="background:var(--gold)"></span>已開啟/互動</div>
+          <div><span class="d" style="background:#8a9995"></span>逾期待更新</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h3 style="margin:0 0 10px;font-size:15px">清單欄位定義</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>內容</th><th>用途</th></tr></thead>
+        <tbody style="font-size:12.5px">
+          <tr><td><b>客戶 / 代號</b></td><td>○家格式姓名 + 客戶代號(不顯示 MAC）</td><td>身分辨識、隱私保護</td></tr>
+          <tr><td><b>輪廓</b></td><td>幼童／銀髮／寵物／過敏／一般／KOL;缺則標「待補輪廓」</td><td>決定客戶版痛點與 CTA</td></tr>
+          <tr><td><b>設備</b></td><td>設備台數;>1 可展開,每台一份報告</td><td>一客戶多報告的入口</td></tr>
+          <tr><td><b>分群</b></td><td>對外只揭露金／銀／銅三級(內部另有風險軸)</td><td>報告主視覺軸判斷</td></tr>
+          <tr><td><b>資料涵蓋</b></td><td>目前累積天數 / 90 天門檻</td><td>能否產季報的硬條件</td></tr>
+          <tr><td><b>報告狀態</b></td><td>九態狀態機(見第 5 節)</td><td>一眼看出進度</td></tr>
+          <tr><td><b>待補內容</b></td><td>阻擋產製或寄發的缺口(缺輪廓／天數不足／需複核）</td><td>行動指引</td></tr>
+          <tr><td><b>上次 / 到期</b></td><td>上次產出日 + 下次季報應產日</td><td>季報週期管理</td></tr>
+          <tr><td><b>寄發</b></td><td>未寄／已寄 LINE／已寄 Email／已開啟</td><td>觸達狀態</td></tr>
+          <tr><td><b>操作</b></td><td>一鍵產製／補輪廓／預覽／核准／寄發</td><td>直接動作</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4. 詳細頁 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">4</span><h2>詳細頁版面示意</h2><span class="sub">點入客戶後</span></div>
+    <p class="lead">一位客戶多台設備 → 每台一個報告卡片;每張卡片內以分頁切換「內部技術版(AK)」與「客戶版」,下方是寄發面板。以下以有 2 台設備的「陳○琳」為例。</p>
+
+    <div class="browser">
+      <div class="bbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="burl">airsure.cleanstation.internal / reports / C2026011203</span></div>
+      <div class="bbody">
+        <div class="crumb">報告產製清單 › <b>陳○琳(C2026011203)</b></div>
+        <div class="cust-head">
+          <div>
+            <div class="name">陳○琳 <span class="tag t-senior">銀髮家庭</span></div>
+            <div class="meta">代號 C2026011203 · 2 台設備 · 加入 2026/01 · 上次報告 2026/05 · 下次到期 08/15</div>
+          </div>
+          <div style="margin-left:auto"><span class="btn ghost">編輯客戶輪廓</span> <span class="btn solid">全部一鍵產製</span></div>
+        </div>
+
+        <!-- device 1 -->
+        <div class="device">
+          <div class="dh">
+            <span class="dn">🛋 客廳 · CS 系列一體機</span>
+            <span class="code">設備 C..03-A</span>
+            <span class="lvl silver" style="margin-left:auto"><span class="g"></span>銀級空氣</span>
+            <span class="status s-done"><span class="d"></span>已核准 · 已寄發</span>
+          </div>
+          <div class="db">
+            <div class="rep-tabs">
+              <span class="rt on">🔧 內部技術版(AK)</span>
+              <span class="rt cust">💚 客戶版</span>
+            </div>
+            <div class="panel">
+              <h5>🔧 內部技術版 — 給內部服務與決策參考</h5>
+              <div class="mini">
+                <div class="m"><div class="mv">P2 · H1</div><div class="ml">PM2.5 / 濕度分級</div></div>
+                <div class="m"><div class="mv">2.8 μg/m³</div><div class="ml">室內 PM2.5 平均</div></div>
+                <div class="m"><div class="mv">63%</div><div class="ml">室內濕度均值</div></div>
+                <div class="m"><div class="mv">2,041 h</div><div class="ml">累積運轉</div></div>
+                <div class="m"><div class="mv">11%</div><div class="ml">防黴除蹣模式佔比</div></div>
+                <div class="m"><div class="mv">8 月底</div><div class="ml">濾網預估耗盡</div></div>
+              </div>
+              <p class="note">服務建議軸:除濕模式僅用 11% → DO NOW 卡導向「把除濕功能叫醒」;濾網 8 月底到期 → 綁季前到府健檢。<b>此頁含技術術語與 MAC/時間戳,不對客戶顯示。</b></p>
+              <span class="btn">重新產製</span> <span class="btn ghost">下載 PDF(內部存檔)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- device 2 -->
+        <div class="device">
+          <div class="dh">
+            <span class="dn">🛏 主臥 · CS 系列一體機</span>
+            <span class="code">設備 C..03-B</span>
+            <span class="lvl bronze" style="margin-left:auto"><span class="g"></span>銅級空氣</span>
+            <span class="status s-purple"><span class="d"></span>客戶版待審</span>
+          </div>
+          <div class="db">
+            <div class="rep-tabs">
+              <span class="rt">🔧 內部技術版(AK)</span>
+              <span class="rt cust on">💚 客戶版</span>
+            </div>
+            <div class="panel" style="border-radius:0 10px 10px 10px">
+              <h5>💚 客戶版 — 給客戶閱讀與分享(Q1_5 模板)</h5>
+              <div class="mini">
+                <div class="m"><div class="mv">銅級空氣</div><div class="ml">對外揭露等級</div></div>
+                <div class="m"><div class="mv">比室外乾淨 6×</div><div class="ml">核心炫點</div></div>
+                <div class="m"><div class="mv">2,041 小時</div><div class="ml">不間斷守護</div></div>
+                <div class="m"><div class="mv">20h 俱樂部</div><div class="ml">身分徽章</div></div>
+                <div class="m"><div class="mv">除水 172 L</div><div class="ml">≈ 344 瓶寶特瓶</div></div>
+                <div class="m"><div class="mv">空氣身分證</div><div class="ml">90 天視覺指紋</div></div>
+              </div>
+              <p class="note red">⚠ 待審原因:此機濕度達標中段,客戶版「濕度敘事」需人工複核成「好消息翻轉」語氣後才可核准放行。</p>
+              <span class="btn solid">預覽客戶版</span> <span class="btn">重新產製</span> <span class="btn">✅ 核准放行</span>
+
+              <div class="send-panel">
+                <h5>📤 寄發面板(核准後啟用)</h5>
+                <div class="send-opts">
+                  <div class="send-opt">
+                    <b>LINE OA 推送</b>
+                    比對已綁定的 LINE 好友 → 推送圖文訊息卡 + 報告連結。可附「掃碼預約檢測」按鈕。
+                  </div>
+                  <div class="send-opt">
+                    <b>Email 寄送</b>
+                    寄出報告連結,或轉 PDF 作為附件。適合列印、存檔到 CRM。
+                  </div>
+                </div>
+                <div class="track">
+                  <span class="tk off">已寄發 —</span>
+                  <span class="tk off">已開啟 —</span>
+                  <span class="tk off">已分享 —</span>
+                  <span class="tk off">掃碼預約 —</span>
+                </div>
+                <p class="fnote" style="margin-top:8px">寄發後三個 MOT(開啟率／分享率／掃碼預約率)自動回填,不呈現在客戶報告內,僅供後台。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. 狀態機 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">5</span><h2>報告狀態機</h2><span class="sub">九態</span></div>
+    <p class="lead">每份「設備 × 報告」都在下列狀態流動。清單頁的燈號、篩選、待補內容全部由狀態驅動。</p>
+    <div class="sm">
+      <div class="node" style="border-left-color:var(--red)"><div class="st"><span class="d" style="background:var(--red)"></span>1 資料未達標</div><p>感測天數 < 90 或無感測資料,無法產製。系統顯示預估達標日。</p></div>
+      <div class="node" style="border-left-color:var(--orange)"><div class="st"><span class="d" style="background:var(--orange)"></span>2 待補輪廓</div><p>資料達標但缺客戶輪廓,先補齊再產,避免出通用版。</p></div>
+      <div class="node" style="border-left-color:var(--green)"><div class="st"><span class="d" style="background:var(--green)"></span>3 可產製</div><p>資料與輪廓齊,可一鍵產製。</p></div>
+      <div class="node" style="border-left-color:var(--blue)"><div class="st"><span class="d" style="background:var(--blue)"></span>4 內部版已產</div><p>內部技術版(AK)產出,供內部審閱與服務對話。</p></div>
+      <div class="node" style="border-left-color:var(--purple)"><div class="st"><span class="d" style="background:var(--purple)"></span>5 客戶版待審</div><p>客戶版已生成,對照交付檢查清單,待人工核准。</p></div>
+      <div class="node" style="border-left-color:#2f9e6f"><div class="st"><span class="d" style="background:#2f9e6f"></span>6 已核准</div><p>通過檢查,可寄發。</p></div>
+      <div class="node" style="border-left-color:#0d7fa8"><div class="st"><span class="d" style="background:#0d7fa8"></span>7 已寄發</div><p>透過 LINE OA 或 Email 送出,記錄管道與時間。</p></div>
+      <div class="node" style="border-left-color:var(--gold)"><div class="st"><span class="d" style="background:var(--gold)"></span>8 已開啟 / 互動</div><p>客戶開啟、分享或掃碼,回填 MOT。</p></div>
+      <div class="node" style="border-left-color:#8a9995"><div class="st"><span class="d" style="background:#8a9995"></span>9 逾期待更新</div><p>距上次產出 > 90 天,提示產下一季報告(回到狀態 3)。</p></div>
+    </div>
+  </section>
+
+  <!-- 6. SOP -->
+  <section>
+    <div class="sec-head"><span class="sec-no">6</span><h2>營運操作 SOP</h2><span class="sub">給業務 / CS 人員</span></div>
+    <ol class="sop">
+      <li><b>開清單、篩「可產製」</b><span class="role">業務/CS</span><p>進 Dashboard,用篩選看今天可以出的名單;優先處理逾期與到期客戶。</p></li>
+      <li><b>點入客戶、確認或補齊輪廓</b><span class="role">業務/CS</span><p>若標「待補輪廓」,先補幼童／銀髮／寵物／過敏等標籤,這決定客戶版的痛點與 CTA。</p></li>
+      <li><b>一鍵產內部技術版(AK)</b><span class="role">系統</span><p>系統依感測資料與分群產出技術版,供內部理解這台機器的實況與服務切點。</p></li>
+      <li><b>一鍵產客戶版並預覽</b><span class="role">系統</span><p>套 Q1_5 模板把技術數字翻成故事與身分標籤;對照交付檢查清單(無技術術語、CS 定位貫穿、季節敘事到位)。</p></li>
+      <li><b>核准放行</b><span class="role">業務主管/CS</span><p>確認客戶版無誤(特別是濕度敘事、個人化語句有資料支持),按核准。</p></li>
+      <li><b>選 LINE 或 Email 寄發</b><span class="role">業務/CS</span><p>已綁 LINE 好友優先用 OA 圖文卡推送;否則 Email 寄連結或 PDF。</p></li>
+      <li><b>追蹤 MOT、安排跟進</b><span class="role">業務/CS</span><p>回收開啟／分享／掃碼預約;已開啟未預約者列入下一波跟進。</p></li>
+    </ol>
+  </section>
+
+  <footer>
+    克立淨 CleanStation · AirSure 數據中台 — AIRCARE 報告產製 Dashboard 版面與流程示意<br>
+    <span class="fnote">本頁為設計示意 mockup,數字為示範用途,非真實客戶資料。實際欄位、狀態與寄發邏輯以 Word 說明文件為準。</span>
+  </footer>
+
+</div>
+</body>
+</html>

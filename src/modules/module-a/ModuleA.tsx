@@ -26,9 +26,8 @@ import {
   CATEGORY_FLOWS,
   CATEGORY_FLOW_SUMMARY,
   FIELD_OUTDOOR_PM25,
-  FIELD_DETAIL_C88,
-  FIELD_DETAILS,
   WHO_PM25_GUIDELINE,
+  getFieldDetail,
   reportGateOf,
   type CatId,
   type FieldRecord,
@@ -37,6 +36,7 @@ import {
 } from '../../mocks/module-a'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
 import type { DeviceReport } from '../../mocks/devices'
+import { AFieldList } from './AFieldList'
 
 /* ── helpers ─────────────────────────────────────────── */
 /* 耗材緊急度 → 標籤與顏色。緊急度本身由資料層判定(見 mocks/module-a.ts 的 urgencyOf),
@@ -967,8 +967,10 @@ function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
   )
 }
 
-/* ── 個人層 (場域詳情 + 場域清單 + 耗材 + 水箱) ─────────── */
-type APersonalSub = 'detail' | 'list' | 'air' | 'usage' | 'consumable' | 'tank'
+/* ── 個人層 (場域詳情 + 空品/行為 + 耗材 + 水箱) ─────────
+ * 場域清單已升為第一層 tab(2026-08-13),不再是這裡的 sub-tab;
+ * 「產出客戶端報告」也跟著移進場域詳情 —— 它本來就只對單一場域成立。 */
+type APersonalSub = 'detail' | 'air' | 'usage' | 'consumable' | 'tank'
 
 function APersonal({
   subTab,
@@ -977,8 +979,7 @@ function APersonal({
   setCurrentFieldId,
   onJumpOverview,
   onJumpSegments,
-  catFilter,
-  setCatFilter,
+  onBackToList,
 }: {
   subTab: APersonalSub
   setSubTab: (s: APersonalSub) => void
@@ -986,9 +987,7 @@ function APersonal({
   setCurrentFieldId: (fid: string) => void
   onJumpOverview: () => void
   onJumpSegments: () => void
-  /** 場域清單類別篩選(由上層 upsell 卡片帶入) */
-  catFilter: CatId | null
-  setCatFilter: (id: CatId | null) => void
+  onBackToList: () => void
 }) {
   const openDetail = (fid: string) => {
     setCurrentFieldId(fid)
@@ -997,11 +996,10 @@ function APersonal({
 
   return (
     <>
-      {/* 個人層 sub-tabs + 頁面層級動作 */}
+      {/* 個人層 sub-tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <div className="b-subtabs">
         {([
-          { k: 'list', l: '場域清單', n: 1284 },
           { k: 'detail', l: '場域詳情' },
           { k: 'air', l: '空氣品質' },
           { k: 'usage', l: '使用行為' },
@@ -1018,22 +1016,17 @@ function APersonal({
           </div>
         ))}
       </div>
-        <ReportButton detail={getFieldDetail(currentFieldId)} />
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={onBackToList}>
+          <Icon name="menu" size={13} />回場域清單
+        </button>
       </div>
 
       {subTab === 'detail' && (
         <ALocationDetail
           fieldId={currentFieldId}
-          onBackToList={() => setSubTab('list')}
+          onBackToList={onBackToList}
           onJumpOverview={onJumpOverview}
           onJumpSegments={onJumpSegments}
-        />
-      )}
-      {subTab === 'list' && (
-        <ALocationList
-          onSelect={openDetail}
-          catFilter={catFilter}
-          onClearCatFilter={() => setCatFilter(null)}
         />
       )}
       {subTab === 'air' && <AAirQuality fieldId={currentFieldId} />}
@@ -1044,144 +1037,8 @@ function APersonal({
   )
 }
 
-/* ── 場域清單 (個人層) ───────────────────────────────── */
-function ALocationList({
-  onSelect,
-  catFilter,
-  onClearCatFilter,
-}: {
-  onSelect: (fid: string) => void
-  /** 類別篩選(由 upsell 卡片點擊帶入) */
-  catFilter?: CatId | null
-  onClearCatFilter?: () => void
-}) {
-  const catMeta = (id: CatId) => CATEGORIES.find((c) => c.id === id)!
-  const filteredFields = catFilter
-    ? FIELDS_A_FULL.filter((f: FieldRecord) => f.cat === catFilter)
-    : FIELDS_A_FULL
-  const filterMeta = catFilter ? catMeta(catFilter) : null
-
-  return (
-    <div className="dt-wrap" {...(catFilter ? { 'data-cat-filter': catFilter } : {})}>
-      {/* 類別篩選 chip(從 upsell 卡片進來時顯示) */}
-      {filterMeta && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 14px', marginBottom: 8,
-          background: filterMeta.bg, borderRadius: 8,
-          border: `1px solid ${filterMeta.color}40`,
-        }}>
-          <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>篩選類別 ·</span>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '4px 10px', borderRadius: 999,
-            background: filterMeta.color, color: '#fff',
-            fontSize: 12, fontWeight: 700,
-          }}>
-            <span style={{ fontFamily: 'var(--f-mono)' }}>{filterMeta.id}</span>
-            {filterMeta.code}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>
-            符合 <b style={{ color: filterMeta.color }}>{filteredFields.length}</b> 筆(全體 {FIELDS_A_FULL.length} 筆)
-          </span>
-          <button
-            className="btn"
-            onClick={onClearCatFilter}
-            style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11, height: 'auto' }}
-          >
-            <Icon name="x" size={11} />清除篩選
-          </button>
-        </div>
-      )}
-      <table className="dt">
-        <thead>
-          <tr>
-            <th style={{ width: 32 }}><input type="checkbox" /></th>
-            <th>場域</th>
-            <th>客戶編號</th>
-            <th>類型</th>
-            <th>六大類型</th>
-            <th>坪數</th>
-            <th>設備</th>
-            <th>狀態</th>
-            <th>PM2.5</th>
-            <th>室外 PM2.5</th>
-            <th>日均</th>
-            <th>會員等級</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredFields.map((f: FieldRecord) => {
-            const meta = catMeta(f.cat)
-            const outdoor = FIELD_OUTDOOR_PM25[f.id]
-            return (
-              <tr key={f.id} style={{ cursor: 'pointer' }} onClick={() => onSelect(f.id)}>
-                <td onClick={(e) => e.stopPropagation()}><input type="checkbox" /></td>
-                <td>
-                  <div className="dt-nm">{f.customerName}</div>
-                  <div className="dt-sub">{f.nm} · {f.addr}</div>
-                </td>
-                <td className="mono mute">{f.customerId}</td>
-                <td><span className="tt">{f.type}</span></td>
-                <td>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    fontSize: 11, padding: '2px 8px', borderRadius: 10,
-                    background: meta.bg, color: meta.color, fontWeight: 600,
-                  }}>
-                    <span style={{ fontFamily: 'var(--f-mono)' }}>{meta.id}</span>
-                    <span>{meta.code}</span>
-                  </span>
-                </td>
-                <td>{f.sz}</td>
-                <td>{f.dev}</td>
-                <td>
-                  <span className="lamp">
-                    <span className={`d ${f.lamp}`}></span>
-                    {f.lamp === 'g' ? '正常' : f.lamp === 'y' ? '警示' : '異常'}
-                  </span>
-                </td>
-                <td><span className={`pill ${f.pm > 50 ? 'r' : f.pm > 25 ? 'y' : 'g'}`}>{f.pm}</span></td>
-                <td>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>{outdoor}</span>
-                  <span style={{ fontSize: 9, color: 'var(--as-mute)', marginLeft: 4 }}>待接入</span>
-                </td>
-                <td className="mono">{f.hrs}<span style={{ color: 'var(--as-mute)' }}>h</span></td>
-                <td>
-                  {f.tier === 'g'
-                    ? <span className="pill" style={{ background: '#FEF3C7', borderColor: '#FCD34D', color: '#B45309', fontWeight: 600 }}>★ 高級</span>
-                    : <span className="pill">一般</span>}
-                </td>
-                <td>
-                  <button className="rowbtn" onClick={(e) => { e.stopPropagation(); onSelect(f.id) }}>
-                    <Icon name="arrow" size={12} />
-                  </button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      <div className="dt-foot">
-        <span>
-          {catFilter
-            ? `顯示 ${filteredFields.length} 筆(類別 ${filterMeta?.code})· 點任一列進「場域詳情」`
-            : `顯示 ${filteredFields.length} / 1,284 筆 · 點任一列進「場域詳情」`}
-        </span>
-        <div className="pager">
-          <button>‹</button>
-          <button className="on">1</button>
-          <button>2</button>
-          <button>3</button>
-          <span className="ell">…</span>
-          <button>143</button>
-          <button>›</button>
-        </div>
-      </div>
-    </div>
-  )
-}
+/* 舊的 ALocationList 已由 AFieldList.tsx 取代(2026-08-13,對齊報告產製清單頁規格)。
+ */
 
 /* ── 耗材庫存 ────────────────────────────────────────── */
 /* 濾網管理 tab — 2026-05-29 依 PDF 重構:
@@ -2023,42 +1880,7 @@ function AUsage({ fieldId }: { fieldId: string }) {
 }
 
 /* 取得場域詳情 — 目前以 SH-2841 王婉真為主示範,其他場域回退到同份 mock 但替換 identity */
-function getFieldDetail(fid: string): FieldDetail {
-  const real = FIELD_DETAILS[fid]
-  if (real) return real                       // 有完整資料的場域(目前只有 C2026010088 是真實資料)
-  const rec = FIELDS_A_FULL.find((f) => f.id === fid)
-  if (!rec) return FIELD_DETAIL_C88
-  /* 總分跟著該場域的 q 走,並回推兩項組成,避免詳情頁分數與清單/整體層打架。
-   * 兩項都必須落在 0–100 且平均等於 total:PM2.5 取 min(100, total+8),濕度補足差額。
-   * (舊寫法 humidityScore = total-14 會讓高分場域算出 PM2.5 > 100,例如 q=92 → 106。) */
-  const total = rec.q
-  const pm25Score = Math.min(100, total + 8)
-  const humidityScore = Math.round((total * 2 - pm25Score) * 10) / 10
-  return {
-    ...FIELD_DETAIL_C88,
-    fid: rec.id,
-    memberName: rec.customerName,
-    memberTier: rec.tier === 'g' ? 'g' : 'n',
-    area: rec.addr,
-    spaceType: rec.type,
-    floorSize: rec.sz,
-    dhi: rec.q,
-    dhiDelta: FIELD_DELTAS[rec.id] ?? 0,
-    cat: rec.cat,
-    airScore: {
-      ...FIELD_DETAIL_C88.airScore,
-      total,
-      pm25Score,
-      humidityScore,
-      pm25Avg: rec.pm,
-      outdoorPm25Avg: FIELD_OUTDOOR_PM25[rec.id] ?? FIELD_DETAIL_C88.airScore.outdoorPm25Avg,
-    },
-    pm25Now: rec.pm,
-    onlineDevices: parseInt(rec.dev.split('/')[0]),
-    totalDevices: parseInt(rec.dev.split('/')[1]),
-    hoursToday: rec.hrs,
-  }
-}
+/* getFieldDetail 已移至 mocks/module-a.ts —— 場域清單的報告狀態要用同一份判斷。 */
 
 /* —— SVG 90 天 PM2.5 趨勢圖(室內主線 + 室外灰虛線 + P50/P90 + 事件) —— */
 function PM25TrendChart({ detail }: { detail: FieldDetail }) {
@@ -2623,6 +2445,18 @@ function ALocationDetail({
             </div>
           </div>
         </div>
+
+        {/* 對外報告產出 —— 2026-08-13 從個人層 sub-tab 列移進來:
+            它只對「當前這一個場域」成立,掛在清單旁邊會指向使用者還沒選的場域。 */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          padding: '10px 18px', borderTop: '1px solid var(--as-line-2)', background: '#fff',
+        }}>
+          <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>
+            <Icon name="send" size={12} /> 對外報告 · 快照 + 免登入連結,產出後收不回
+          </div>
+          <ReportButton detail={d} />
+        </div>
       </div>
 
       {/* ── 空氣健康成績單:AirCare 指數三分數卡 ───────────────── */}
@@ -2776,11 +2610,12 @@ function ALocationDetail({
 }
 
 /* ── ModuleA (root) ─────────────────────────────────── */
-type ATab = 'overview' | 'segments' | 'personal'
+/* 場域清單是自己一層(整體 → 分類 → 清單 → 個人),不再是個人層的 sub-tab。 */
+type ATab = 'overview' | 'segments' | 'list' | 'personal'
 
 export function ModuleA() {
   const [tab, setTab] = useState<ATab>('overview')
-  // 個人層的 sub-tab 與當前場域 id 提到 root,讓整體層 row 點擊可以直接跳場域詳情
+  // 個人層的 sub-tab 與當前場域 id 提到 root,讓整體層 / 清單的 row 點擊可以直接跳場域詳情
   const [personalSubTab, setPersonalSubTab] = useState<APersonalSub>('detail')
   const [currentFieldId, setCurrentFieldId] = useState<string>('DEV-8065998DCAF0')
   // 場域清單類別篩選(由整體層 upsell 卡片點擊帶入)
@@ -2792,16 +2627,16 @@ export function ModuleA() {
     setTab('personal')
   }
 
-  /** 從整體層 upsell 卡片進入個人層「場域清單」並鎖定類別 */
+  /** 從整體層 upsell 卡片進入「場域清單」並鎖定類別 */
   const openCategoryList = (cid: CatId) => {
     setCatFilter(cid)
-    setPersonalSubTab('list')
-    setTab('personal')
+    setTab('list')
   }
 
   const tabs = [
     { k: 'overview', l: '整體場域' },
     { k: 'segments', l: '分類概況' },
+    { k: 'list', l: '場域清單', n: 1284 },
     { k: 'personal', l: '個人場域資訊' },
   ]
 
@@ -2828,6 +2663,13 @@ export function ModuleA() {
         />
       )}
       {tab === 'segments' && <ASegments onOpenDetail={openDetailById} />}
+      {tab === 'list' && (
+        <AFieldList
+          onSelect={openDetailById}
+          catFilter={catFilter}
+          onClearCatFilter={() => setCatFilter(null)}
+        />
+      )}
       {tab === 'personal' && (
         <APersonal
           subTab={personalSubTab}
@@ -2836,8 +2678,7 @@ export function ModuleA() {
           setCurrentFieldId={setCurrentFieldId}
           onJumpOverview={() => setTab('overview')}
           onJumpSegments={() => setTab('segments')}
-          catFilter={catFilter}
-          setCatFilter={setCatFilter}
+          onBackToList={() => setTab('list')}
         />
       )}
     </PageShell>
