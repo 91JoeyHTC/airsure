@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AirCare × 數據中台 架構關係圖</title>
+<style>
+  :root{
+    --ink:#1a2332; --muted:#5b6b82; --line:#d7dee8; --bg:#f4f7fb;
+    --internal:#0f766e; --internal-bg:#e6f4f2; --internal-line:#5eaaa2;
+    --wall:#b45309; --wall-bg:#fdf3e3; --wall-line:#e0a44a;
+    --public:#1d6feb; --public-bg:#e8f1fe; --public-line:#7db0f5;
+    --source:#475569; --source-bg:#eef1f6;
+    --engine:#7c3aed; --engine-bg:#f1eafe;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"PingFang TC","Microsoft JhengHei","Noto Sans TC","Hiragino Sans GB",system-ui,sans-serif;
+    line-height:1.55; padding:40px 20px;
+  }
+  .sheet{max-width:1040px; margin:0 auto;}
+  header h1{font-size:26px; margin:0 0 4px;}
+  header .sub{color:var(--muted); font-size:14px; margin-bottom:6px;}
+  header .principle{
+    font-size:13px; color:var(--wall); background:var(--wall-bg);
+    border:1px solid var(--wall-line); border-radius:8px; padding:8px 12px;
+    display:inline-block; margin-top:8px;
+  }
+  .band{
+    border-radius:14px; padding:16px 18px; margin:0; position:relative;
+    border:1px solid var(--line); background:#fff;
+  }
+  .band .tag{
+    position:absolute; top:-11px; left:18px; font-size:12px; font-weight:700;
+    padding:2px 10px; border-radius:20px; color:#fff;
+  }
+  .band .access{position:absolute; top:-11px; right:18px; font-size:11px; font-weight:600;
+    padding:2px 10px; border-radius:20px; background:#fff; border:1px solid var(--line); color:var(--muted);}
+  .band h2{font-size:16px; margin:6px 0 10px;}
+  .band .desc{font-size:13px; color:var(--muted); margin-bottom:12px;}
+  .cards{display:flex; gap:10px; flex-wrap:wrap;}
+  .card{
+    flex:1 1 160px; min-width:150px; background:var(--internal-bg);
+    border:1px solid var(--internal-line); border-radius:10px; padding:10px 12px; font-size:13px;
+  }
+  .card b{display:block; font-size:13.5px; margin-bottom:2px;}
+  .card small{color:var(--muted); font-size:11.5px;}
+
+  /* source band */
+  .b-source{background:var(--source-bg);}
+  .b-source .tag{background:var(--source);}
+  .b-source .card{background:#fff; border-color:var(--line);}
+
+  /* internal band */
+  .b-internal{background:var(--internal-bg); border-color:var(--internal-line);}
+  .b-internal .tag{background:var(--internal);}
+
+  /* engine highlight card */
+  .card.engine{background:var(--engine-bg); border-color:#c4a7f5;}
+  .card.engine b{color:var(--engine);}
+
+  /* wall band */
+  .b-wall{background:var(--wall-bg); border:2px dashed var(--wall-line);}
+  .b-wall .tag{background:var(--wall);}
+  .b-wall h2{color:var(--wall);}
+  .b-wall .card{background:#fff; border-color:var(--wall-line);}
+
+  /* public band */
+  .b-public{background:var(--public-bg); border-color:var(--public-line);}
+  .b-public .tag{background:var(--public);}
+  .b-public .card{background:#fff; border-color:var(--public-line);}
+
+  .arrow{text-align:center; color:var(--muted); font-size:22px; line-height:1; margin:6px 0;}
+  .arrow small{display:block; font-size:11px; margin-top:2px;}
+
+  .split{display:flex; gap:14px; align-items:stretch;}
+  .split > div{flex:1;}
+  .exit-note{font-size:11.5px; color:var(--muted); text-align:center; margin-top:6px;}
+
+  .decisions{margin-top:28px;}
+  .decisions h3{font-size:15px; margin:0 0 12px; color:var(--ink);}
+  .dec{display:flex; gap:12px; margin-bottom:10px; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:12px 14px;}
+  .dec .n{flex:0 0 26px; height:26px; border-radius:50%; background:var(--ink); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;}
+  .dec .t{font-size:13px;}
+  .dec .t b{color:var(--ink);}
+
+  .legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:22px; font-size:12px; color:var(--muted);}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .dot{width:12px; height:12px; border-radius:3px; display:inline-block;}
+  footer{margin-top:24px; font-size:11px; color:var(--muted); text-align:center;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <h1>AirCare × 數據中台　架構關係圖</h1>
+    <div class="sub">中台＝對內工廠（算＋產）｜ AirCare 網頁＝對外出貨口（免登入、每客戶／每設備一份）</div>
+    <div class="principle">核心原則：中台內部即時 query／不預存　·　但對外 AirCare 報告一律採「快照」——安全、效能、週期性本質三個理由</div>
+  </header>
+
+  <!-- Layer 1 -->
+  <div class="band b-source">
+    <span class="tag">第一層　資料源</span>
+    <span class="access">🔒 僅中台可存取</span>
+    <h2>原始資料來源</h2>
+    <div class="cards">
+      <div class="card"><b>Salesforce (CellSports)</b><small>會員 / 消費 / 訂單</small></div>
+      <div class="card"><b>IoT API</b><small>感測資料（PM2.5 / 濕度）· mapping 到客戶編號</small></div>
+      <div class="card"><b>LINE 對話標籤</b><small>互動小結 / 分群標籤</small></div>
+    </div>
+  </div>
+
+  <div class="arrow">▼<small>整合 · mapping（客戶編號 ↔ 設備）</small></div>
+
+  <!-- Layer 2 -->
+  <div class="band b-internal">
+    <span class="tag">第二層　中台核心</span>
+    <span class="access">🔒 對內 · 需登入 · 看得到全部資料</span>
+    <h2>運算與產出都發生在這裡</h2>
+    <div class="cards">
+      <div class="card"><b>資料整合層</b><small>客戶編號 ↔ 設備 mapping、生命週期／近三年消費後端加工</small></div>
+      <div class="card"><b>分群引擎</b><small>八分群 sensor_data.py 邏輯（金/銀/銅＋風險軸）</small></div>
+      <div class="card engine"><b>⚙ 報告產出引擎</b><small>單一引擎，兩個出口。對內對外共用，分數只算一次</small></div>
+    </div>
+    <div style="height:12px;"></div>
+    <div class="cards">
+      <div class="card"><b>內部 Dashboard 三層</b><small>① 總覽（全會員趨勢）② 分群分析 ③ 個人詳細（Salesforce＋IoT＋LINE＋AI建議）</small></div>
+    </div>
+  </div>
+
+  <div class="arrow">▼<small>產出「當下」的個人／設備報告，寫入快照</small></div>
+
+  <!-- Layer 3: WALL -->
+  <div class="band b-wall">
+    <span class="tag">第三層　快照牆</span>
+    <span class="access">🧱 內外邊界</span>
+    <h2>Report Snapshot（安全邊界）</h2>
+    <div class="desc">中台把每台設備的報告存成快照，配一個不可猜的專屬 token。對外層只讀這裡，永遠碰不到內部 DB／API。</div>
+    <div class="cards">
+      <div class="card"><b>快照儲存</b><small>渲染完成的報告內容（月/季週期）</small></div>
+      <div class="card"><b>Token 綁「設備」</b><small>一台機器一份 → 一位客戶多台＝多連結</small></div>
+      <div class="card"><b>可撤銷 / 可設期效</b><small>長 token 不可枚舉（輕度個資）</small></div>
+      <div class="card"><b>歷史歸戶設備</b><small>過去所有產出報告皆歸戶於該設備 → 累積成每台機器的報告時間軸</small></div>
+    </div>
+  </div>
+
+  <div class="arrow">▼<small>信件 / QRCode 派送專屬連結</small></div>
+
+  <!-- Layer 4 -->
+  <div class="band b-public">
+    <span class="tag">第四層　對外發佈</span>
+    <span class="access">🌐 對外 · 免登入 · 只讀</span>
+    <h2>客戶端個人報告網頁</h2>
+    <div class="desc">客戶收到信或掃 QRCode → 用 token 打開自己那份快照。只揭露金／銀／銅三級 ＋ 行動建議（八分群、AI 服務風險等內部軸不外顯）。</div>
+    <div class="split">
+      <div>
+        <div class="card"><b>對外出口</b><small>免登入報告頁 · 揭露：金/銀/銅 ＋ 行動建議</small></div>
+      </div>
+      <div>
+        <div class="card"><b>對內出口（同引擎）</b><small>Dashboard 個人頁 · 揭露：八分群 ＋ AI 建議 ＋ 價值/風險評估</small></div>
+      </div>
+    </div>
+    <div class="exit-note">↑ 兩個出口來自第二層同一顆「報告產出引擎」，只差在渲染樣式與揭露深度</div>
+  </div>
+
+  <!-- Decisions -->
+  <div class="decisions">
+    <h3>三個已拍板的設計決策</h3>
+    <div class="dec"><div class="n">1</div><div class="t"><b>對外報告採快照，非即時 query。</b>「不預存」原則補一條例外：對外 AirCare 報告一律快照——(a) 公開網頁不直連內部 DB；(b) 上萬份無法每次即時算；(c) 空氣報告本質是週期性月／季報。</div></div>
+    <div class="dec"><div class="n">2</div><div class="t"><b>一套產出引擎，兩個出口，兩種揭露程度。</b>對內 Dashboard 個人頁與對外客戶報告共用同一顆引擎，分數只算一次，避免兩邊不一致；差別僅在樣式與揭露深度。</div></div>
+    <div class="dec"><div class="n">3</div><div class="t"><b>Token 綁設備而非客戶。</b>一台機器一份報告，token 對應 device；免登入＋輕度個資，token 需長而不可枚舉、可設期效、可撤銷。<b>設備亦為歸戶單位——過去所有產出報告皆歸戶於該設備，累積成每台機器的報告時間軸。</b></div></div>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--source)"></i>資料源（僅中台可存取）</span>
+    <span><i class="dot" style="background:var(--internal)"></i>中台核心（對內·需登入）</span>
+    <span><i class="dot" style="background:var(--engine)"></i>報告產出引擎（共用）</span>
+    <span><i class="dot" style="background:var(--wall)"></i>快照牆（內外邊界）</span>
+    <span><i class="dot" style="background:var(--public)"></i>對外發佈（免登入·只讀）</span>
+  </div>
+
+  <div style="margin-top:22px; background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px 16px; font-size:13px;">
+    <b style="color:var(--internal)">9 月底「零版本」落地路徑（先可用再迭代）：</b>
+    中台批次跑一次 → 產出 100–200 份報告快照 → 靜態託管＋發 token → <b style="color:var(--wall)">檢視報告合理性</b> → <b style="color:var(--wall)">有問題回 Aircare 討論再出報告</b> → 報告轉線上報告 → 連結寄信給客戶。
+    <span style="color:var(--muted)">不需即時、不需完整中台上線；三層 Dashboard 於後續階段補齊。</span>
+  </div>
+
+  <footer>克立淨 AirSure 數據中台 · AirCare 架構關係圖　|　供 Notion 對齊與外部 AI 服務商溝通使用</footer>
+</div>
+</body>
+</html>
