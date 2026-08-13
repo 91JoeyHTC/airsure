@@ -140,14 +140,22 @@ export function useMemberByCode(code: string | null | undefined): { member: Memb
   return { member: memberCache.get(c) ?? null, loading: !settled }
 }
 
-/** 一次解析一批客戶編號(場域清單當頁預解析用)。
+/** 一次解析一批客戶編號(場域清單用)。
  *
  * 中台目前沒有批次端點,只能逐筆打 /api/members?q=,所以限制同時 4 筆,
- * 且只查「還沒在快取裡」的編號。等中台加上批次端點(見 plan 的下一步)後,
- * 這個 hook 內部換成一次呼叫即可,呼叫端不用改。 */
+ * 且只查「還沒在快取裡」的編號;佇列依傳入順序處理,排前面的先出現。
+ * 等中台加上批次端點(見 plan 的下一步)後,這個 hook 內部換成一次呼叫即可,
+ * 呼叫端不用改。
+ *
+ * `resolved` 是已有結果(含查無此人的 null)的筆數 —— 呼叫端用它顯示解析進度,
+ * 因為 KPI/篩選數字要等輪廓到齊才算得準。 */
 const MEMBER_FETCH_CONCURRENCY = 4
 
-export function useMembersByCodes(codes: string[]): { byCode: Record<string, MemberHit | null>; resolving: boolean } {
+export function useMembersByCodes(codes: string[]): {
+  byCode: Record<string, MemberHit | null>
+  resolving: boolean
+  resolved: number
+} {
   const [, bump] = useState(0)
   const key = codes.join(',')
 
@@ -173,8 +181,12 @@ export function useMembersByCodes(codes: string[]): { byCode: Record<string, Mem
   }, [key])
 
   const byCode: Record<string, MemberHit | null> = {}
-  for (const c of codes) byCode[c] = memberCache.get(c) ?? null
-  return { byCode, resolving: codes.some(c => c.length >= 2 && !memberCache.has(c)) }
+  let resolved = 0
+  for (const c of codes) {
+    byCode[c] = memberCache.get(c) ?? null
+    if (c.length < 2 || memberCache.has(c)) resolved++
+  }
+  return { byCode, resolving: resolved < codes.length, resolved }
 }
 
 /** 會員搜尋:q 至少 2 字才打 API,輸入停頓 300ms 後查詢。 */

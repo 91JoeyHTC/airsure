@@ -457,37 +457,49 @@ export function applyLiveProfiles(row: ReportCustomerRow, profiles: ProfileId[])
   return { ...row, profiles, devices, rollupState: states.size === 1 ? devices[0].state : null }
 }
 
-/* ── KPI 四格(規格 §4) ────────────────────────────────────────────
- * 每格都拆「真實 / 示範」—— 清單同時有 AIRCARE 合格清單的真實客戶與 9 筆示範,
- * 只給一個總數會讓人把虛構的寄發數當成營運實績。 */
+/* ── 母體規模(與輪廓無關,永遠是定值) ───────────────────────────── */
 const REAL_ROWS = REPORT_ROWS.filter((r) => !r.isDemo)
-const DEMO_ROWS = REPORT_ROWS.filter((r) => r.isDemo)
-const allDevices = REPORT_ROWS.flatMap((r) => r.devices)
 
-function countDevices(rows: ReportCustomerRow[], states: ReportState[]): number {
-  return rows.reduce((n, r) => n + r.devices.filter((d) => states.includes(d.state)).length, 0)
-}
-
-export interface KpiSplit { real: number; demo: number; total: number }
-
-const kpiOf = (...states: ReportState[]): KpiSplit => {
-  const real = countDevices(REAL_ROWS, states)
-  const demo = countDevices(DEMO_ROWS, states)
-  return { real, demo, total: real + demo }
-}
-
-export const REPORT_KPI = {
-  ready: kpiOf('ready'),
-  sent: kpiOf('sent', 'opened'),
-  needProfile: kpiOf('need-profile'),
-  overdue: kpiOf('overdue'),
-  devices: allDevices.length,
+export const REPORT_TOTALS = {
+  devices: REPORT_ROWS.flatMap((r) => r.devices).length,
   customers: REPORT_ROWS.length,
   /** 真實(AIRCARE 合格清單)的分子 */
   realCustomers: REAL_ROWS.length,
   realDevices: ELIGIBLE_DEVICES.length,
   /** 真實設備裡已有設備分析報告(因此才有分群/指數)的台數 */
   withReport: REAL_ROWS.flatMap((r) => r.devices).filter((d) => d.fieldId).length,
+}
+
+/** 要向中台解析的客戶編號(真實列;示範列刻意不查,見 AFieldList 註解) */
+export const REAL_CUSTOMER_CODES: string[] = REAL_ROWS.map((r) => r.customerId)
+
+/* ── KPI 四格(規格 §4) ────────────────────────────────────────────
+ * 每格都拆「真實 / 示範」—— 清單同時有 AIRCARE 合格清單的真實客戶與 9 筆示範,
+ * 只給一個總數會讓人把虛構的寄發數當成營運實績。
+ *
+ * ⚠ 必須吃「已套用 SF 輪廓的列」而不是 REPORT_ROWS ——
+ *   輪廓要等中台回來才放行(applyLiveProfiles),用靜態列算會少算可產製、
+ *   多算待補輪廓,與表格上的燈號對不起來(2026-08-13 修)。 */
+export interface KpiSplit { real: number; demo: number; total: number }
+
+function countDevices(rows: ReportCustomerRow[], states: ReportState[]): number {
+  return rows.reduce((n, r) => n + r.devices.filter((d) => states.includes(d.state)).length, 0)
+}
+
+export function computeKpi(rows: ReportCustomerRow[]) {
+  const real = rows.filter((r) => !r.isDemo)
+  const demo = rows.filter((r) => r.isDemo)
+  const split = (...states: ReportState[]): KpiSplit => {
+    const r = countDevices(real, states)
+    const d = countDevices(demo, states)
+    return { real: r, demo: d, total: r + d }
+  }
+  return {
+    ready: split('ready'),
+    sent: split('sent', 'opened'),
+    needProfile: split('need-profile'),
+    overdue: split('overdue'),
+  }
 }
 
 /* ── 狀態篩選 chip(規格 §4 清單頁) ─────────────────────────────── */
@@ -499,13 +511,16 @@ export function matchesFilter(row: ReportCustomerRow, k: ReportFilterKey): boole
   return row.devices.some((d) => d.state === k)
 }
 
-/* chip 的數字一律是「客戶數」,與清單列數一致(KPI 四格才是設備/報告數) */
-const customersMatching = (k: ReportFilterKey) => REPORT_ROWS.filter((r) => matchesFilter(r, k)).length
-
-export const REPORT_FILTERS: Array<{ k: ReportFilterKey; label: string; n: number }> = [
-  { k: 'all',          label: '全部',       n: customersMatching('all') },
-  { k: 'ready',        label: '可產製',     n: customersMatching('ready') },
-  { k: 'need-profile', label: '待補輪廓',   n: customersMatching('need-profile') },
-  { k: 'insufficient', label: '資料未達標', n: customersMatching('insufficient') },
-  { k: 'overdue',      label: '逾期待更新', n: customersMatching('overdue') },
+const FILTER_LABELS: Array<{ k: ReportFilterKey; label: string }> = [
+  { k: 'all',          label: '全部' },
+  { k: 'ready',        label: '可產製' },
+  { k: 'need-profile', label: '待補輪廓' },
+  { k: 'insufficient', label: '資料未達標' },
+  { k: 'overdue',      label: '逾期待更新' },
 ]
+
+/** chip 的數字一律是「客戶數」,與清單列數一致(KPI 四格才是設備/報告數)。
+ *  同樣要吃已套用 SF 輪廓的列,否則會與表格燈號不一致。 */
+export function computeFilters(rows: ReportCustomerRow[]): Array<{ k: ReportFilterKey; label: string; n: number }> {
+  return FILTER_LABELS.map(({ k, label }) => ({ k, label, n: rows.filter((r) => matchesFilter(r, k)).length }))
+}

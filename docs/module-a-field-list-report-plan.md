@@ -163,15 +163,18 @@
 
 > 逐筆結果（客戶編號 ↔ 成員困擾）刻意不落地到 repo —— 「家人過敏 / 家人生病」綁上客戶編號屬健康相關個資（AGENTS.md §7）。前端一律執行期向中台取。
 
-- 現況：中台 `/api/member360` **沒有回傳這個欄位**（profile 只有性別/生日/年齡/縣市/區/地址/分區/顧問/下次定保），`/api/diagnostics` 也拿不到欄位清單 → 需要中台先開放。
+- ~~現況：中台沒有回傳這個欄位~~ → **2026-08-13 已於中台補上**：`/api/members?q=` 與 `/api/member360?id=` 都新增 `family_bothered`（`Family_Bothered__c` 原樣回傳的分號分隔字串）。中台檔案 `~/repos/dataspec/sf-dashboard/app.py`，共 4 行。
 - **多重選擇改變了資料結構**：`ReportCustomerRow.profile: ProfileId | null` → `profiles: ProfileId[]`。清單的輪廓欄改成可疊多個標籤，第一個（粗體）是主輪廓。
 - `profilesFromConcern()`：以 `;`／`；`／`,`／`、` 斷詞（不切 `/`，因為「家有孕婦/家有新生兒/小孩」本身含斜線），先走 `CONCERN_OPTION_MAP` 精確對照，對不上才用關鍵字後備（避免選項日後改名就整批判成「一般」）。沒填 → 空陣列。
 - `PROFILE_PRIORITY`（健康風險優先）：過敏 > 家人生病 > 幼童/孕婦 > 銀髮 > 寵物 > KOL > 一般。客戶版報告只能有一個主痛點/CTA，多選時取排最前者。**這個排序是假設，需與行銷/CS 確認。**
 - `applyLiveProfiles(row, profiles)`：清單九態是模組載入時算好的靜態值，那時還沒有 SF 資料。中台回來後由元件呼叫這支，把因「缺輪廓」卡在 ② 的設備放行到 ③ 可產製；資料未達標、僅內部版、已寄發等與輪廓無關的狀態不受影響。
+- **KPI 四格與狀態 chip 也必須吃放行後的列**（2026-08-13 第七輪修）：原本 `REPORT_KPI` / `REPORT_FILTERS` 是模組層靜態常數，會與表格燈號對不起來（實測表格 2 綠燈、chip 寫「可產製 1」）。改成 `computeKpi(rows)` / `computeFilters(rows)`，由 `AFieldList` 算一次 `liveRows` 餵給表格、KPI、chip。連帶把姓名/輪廓解析範圍由「當頁」改成「全部真實列」——KPI 是整份母體的數字，只解析當頁必然不準。
 - `MemberHit.family_bothered` / `Member360.profile.family_bothered` 型別已先定義好，中台補上欄位即自動生效，前端不用再改。
 - 待補內容的文案改為「輪廓待接 SF『成員困擾』欄位」，不再寫成 CS 漏填。
 
 ### 中台端點規格（待中台實作）
+
+**優先度已提高**：場域清單現在每次進頁都要解析全部 69 位（KPI／chip 要整份母體才算得準），逐筆打 `/api/members?q=` 實測 **13.1 秒**才到齊，這段時間 KPI 會低估可產製。批次端點可把它降到一次呼叫。
 
 現況每位客戶要 2 次呼叫（`/api/members?q=` 換 id → `/api/member360?id=`），69 位 = 138 次，不可行。建議新增：
 

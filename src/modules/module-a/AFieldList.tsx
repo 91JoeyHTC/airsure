@@ -11,8 +11,10 @@ import { useMembersByCodes, type MemberHit } from '../../hooks/useMember360'
 import { CATEGORIES, type CatId } from '../../mocks/module-a'
 import {
   REPORT_ROWS,
-  REPORT_KPI,
-  REPORT_FILTERS,
+  REPORT_TOTALS,
+  REAL_CUSTOMER_CODES,
+  computeKpi,
+  computeFilters,
   REPORT_STATE_META,
   REPORT_STATE_ORDER,
   REPORT_DATA_THRESHOLD_DAYS,
@@ -160,8 +162,9 @@ function DeviceRow({ d, isDemo, onSelect }: { d: ReportDeviceRow; isDemo: boolea
 
 /* ── 客戶列 ───────────────────────────────────────────── */
 function CustomerRow({
-  row: rawRow, expanded, onToggle, onSelect, live, resolving,
+  row, expanded, onToggle, onSelect, live, resolving,
 }: {
+  /** 已套用 SF 輪廓的列(放行動作在 AFieldList 統一做,KPI/chip 才會與燈號同源) */
   row: ReportCustomerRow
   expanded: boolean
   onToggle: () => void
@@ -170,10 +173,6 @@ function CustomerRow({
   live: MemberHit | null
   resolving: boolean
 }) {
-  /* 輪廓來自 SF「成員困擾」(多重選擇)。中台回來後,原本卡在「② 待補輪廓」
-   * 的設備要跟著放行到「③ 可產製」—— 靜態算好的九態不知道 SF 有資料。 */
-  const row = applyLiveProfiles(rawRow, profilesFromConcern(live?.family_bothered))
-
   const multi = row.devices.length > 1
   const first = row.devices[0]
   const uniformCat = row.devices.every((d) => d.cat === first.cat)
@@ -301,25 +300,31 @@ export function AFieldList({
   const [expanded, setExpanded] = useState<string[]>([])
   const [page, setPage] = useState(0)
 
+  /* 向中台解析「全部真實列」而不是只解析當頁 —— KPI 四格與狀態 chip 是整份母體的
+   * 數字,只解析當頁會讓它們少算可產製、多算待補輪廓,與表格上的燈號對不起來。
+   * 佇列依傳入順序、同時 4 筆,所以第 1 頁的姓名仍最先出現;結果進 session 快取,
+   * 翻頁不重打。示範列刻意不查:它們的編號有些在 Salesforce 真的存在但屬於別人
+   * (例:C201000272),查了會把真人姓名貼到虛構的場域資料上。 */
+  const { byCode, resolving, resolved } = useMembersByCodes(REAL_CUSTOMER_CODES)
+
+  /* 輪廓來自 SF「成員困擾」。中台回來後,原本卡在「② 待補輪廓」的設備要放行到
+   * 「③ 可產製」——靜態算好的九態不知道 SF 有資料。這個放行在這裡統一做一次,
+   * 表格、KPI、chip 全部吃同一份 liveRows,不會各算各的。 */
+  const liveRows = REPORT_ROWS.map((r) =>
+    applyLiveProfiles(r, profilesFromConcern(byCode[r.customerId]?.family_bothered)),
+  )
+  const kpi = computeKpi(liveRows)
+  const filters = computeFilters(liveRows)
+
   const catMeta = catFilter ? CATEGORIES.find((c) => c.id === catFilter)! : null
-  const rows = REPORT_ROWS
+  const rows = liveRows
     .filter((r) => matchesFilter(r, filter))
     .filter((r) => (catMeta ? r.devices.some((d) => d.cat === catMeta.id) : true))
 
-  /* 分頁是真的 —— 姓名解析逐筆打中台,一次只解析當頁,不是整份清單。 */
+  /* 分頁是真的 —— 一頁 20 列,避免一次渲染整份母體。 */
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
   const pageRows = rows.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE)
-
-  /* 當頁向中台解析姓名(結果進 session 快取,同一編號只查一次)。
-   * 中台未連線就退回 mock 姓名/客戶編號,清單照常顯示 —— AGENTS.md §10 的優雅降級。
-   *
-   * 只查「沒有 mock 姓名」的列(= AIRCARE 合格清單的真實客戶,個資不落地所以只有編號)。
-   * 示範場域刻意不查:它們的編號有些在 Salesforce 真的存在但屬於別人
-   * (例:C201000272),查了會把真人姓名貼到虛構的場域資料上。 */
-  const codesToResolve = pageRows.filter((r) => !r.isDemo).map((r) => r.customerId)
-  const { byCode, resolving } = useMembersByCodes(codesToResolve)
-  const liveCount = pageRows.filter((r) => byCode[r.customerId]?.name).length
 
   const toggle = (id: string) =>
     setExpanded((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -335,23 +340,23 @@ export function AFieldList({
       <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 16 }}>
         <div className="kpi green">
           <div className="lbl">可立即產製</div>
-          <div className="val">{REPORT_KPI.ready.total}<span className="u">份</span></div>
-          <div className="ft"><span className="delta">資料與輪廓齊備</span><KpiSource k={REPORT_KPI.ready} /></div>
+          <div className="val">{kpi.ready.total}<span className="u">份</span></div>
+          <div className="ft"><span className="delta">資料與輪廓齊備</span><KpiSource k={kpi.ready} /></div>
         </div>
         <div className="kpi purple">
           <div className="lbl">本季已寄發</div>
-          <div className="val">{REPORT_KPI.sent.total}<span className="u">份</span></div>
-          <div className="ft"><span className="delta">含已開啟/互動</span><KpiSource k={REPORT_KPI.sent} /></div>
+          <div className="val">{kpi.sent.total}<span className="u">份</span></div>
+          <div className="ft"><span className="delta">含已開啟/互動</span><KpiSource k={kpi.sent} /></div>
         </div>
         <div className="kpi orange">
           <div className="lbl">待補客戶輪廓</div>
-          <div className="val">{REPORT_KPI.needProfile.total}<span className="u">份</span></div>
-          <div className="ft"><span className="delta">輪廓待接 SF「成員困擾」</span><KpiSource k={REPORT_KPI.needProfile} /></div>
+          <div className="val">{kpi.needProfile.total}<span className="u">份</span></div>
+          <div className="ft"><span className="delta">SF「成員困擾」未填</span><KpiSource k={kpi.needProfile} /></div>
         </div>
         <div className="kpi red">
           <div className="lbl">逾期待更新</div>
-          <div className="val">{REPORT_KPI.overdue.total}<span className="u">份</span></div>
-          <div className="ft"><span className="delta dn">距上次 &gt; {REPORT_DATA_THRESHOLD_DAYS} 天</span><KpiSource k={REPORT_KPI.overdue} /></div>
+          <div className="val">{kpi.overdue.total}<span className="u">份</span></div>
+          <div className="ft"><span className="delta dn">距上次 &gt; {REPORT_DATA_THRESHOLD_DAYS} 天</span><KpiSource k={kpi.overdue} /></div>
         </div>
       </div>
 
@@ -363,18 +368,24 @@ export function AFieldList({
       }}>
         <Icon name="layers" size={12} />
         <span>
-          <b>{REPORT_KPI.realCustomers}</b> 位客戶 · <b>{REPORT_KPI.realDevices}</b> 台設備來自
-          AIRCARE 正式報告合格清單(2026-08-11 匯出),姓名由客戶編號向 Salesforce 即時解析;
-          其餘 {REPORT_KPI.customers - REPORT_KPI.realCustomers} 列標「示範」。
+          <b>{REPORT_TOTALS.realCustomers}</b> 位客戶 · <b>{REPORT_TOTALS.realDevices}</b> 台設備來自
+          AIRCARE 正式報告合格清單(2026-08-11 匯出),姓名與輪廓由客戶編號向 Salesforce 即時解析;
+          其餘 {REPORT_TOTALS.customers - REPORT_TOTALS.realCustomers} 列標「示範」。
         </span>
         <span style={{ color: 'var(--as-mute)' }}>
-          其中 {REPORT_KPI.withReport} 台已有設備分析報告(才有分群與指數),其餘待報告產出引擎接入。
+          其中 {REPORT_TOTALS.withReport} 台已有設備分析報告(才有分群與指數),其餘待報告產出引擎接入。
+        </span>
+        {/* KPI 與 chip 是整份母體的數字,輪廓沒到齊前會低估可產製 —— 講出來,不要讓人以為是定值 */}
+        <span style={{ marginLeft: 'auto', fontWeight: 600, color: resolving ? '#D97706' : 'var(--as-success)' }}>
+          {resolving
+            ? `輪廓解析中 ${resolved} / ${REAL_CUSTOMER_CODES.length} 位 · KPI 與篩選數字尚未到齊`
+            : `輪廓已解析 ${resolved} / ${REAL_CUSTOMER_CODES.length} 位`}
         </span>
       </div>
 
       {/* 狀態篩選 —— 規格 §4 */}
       <div className="fb" style={{ marginTop: 16 }}>
-        {REPORT_FILTERS.map((f) => (
+        {filters.map((f) => (
           <span
             key={f.k}
             className={`chip ${f.k === filter ? 'on' : ''}`}
@@ -451,11 +462,10 @@ export function AFieldList({
         <div className="dt-foot">
           <span>
             第 {current * PAGE_SIZE + 1}–{current * PAGE_SIZE + pageRows.length} 筆 ·
-            共 {rows.length} 位客戶 / {REPORT_KPI.devices} 份報告
+            共 {rows.length} 位客戶 / {REPORT_TOTALS.devices} 份報告
             <span style={{ color: 'var(--as-mute)', marginLeft: 6 }}>
-              (本頁姓名 {resolving
-                ? '查詢 Salesforce 中…'
-                : `${liveCount} / ${codesToResolve.length} 筆即時解析`})
+              (姓名/輪廓 {resolved} / {REAL_CUSTOMER_CODES.length} 筆向 Salesforce 即時解析
+              {resolving ? ' · 查詢中…' : ''})
             </span>
           </span>
           <div className="pager">
