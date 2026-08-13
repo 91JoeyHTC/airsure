@@ -138,9 +138,19 @@
 
 使用者指出客戶輪廓可對應 SF Contact 的「成員困擾」欄位，不必人工重補。
 
+| 項目 | 值 |
+|---|---|
+| 欄位標籤 | 成員困擾 |
+| 欄位名稱 | Family_Bothered |
+| API 名稱 | `Family_Bothered__c` |
+| 資料類型 | 選項清單（**多重選擇**）→ SF 回傳分號分隔字串，例「幼童;寵物」 |
+
 - 現況：中台 `/api/member360` **沒有回傳這個欄位**（profile 只有性別/生日/年齡/縣市/區/地址/分區/顧問/下次定保），`/api/diagnostics` 也拿不到欄位清單 → 需要中台先開放。
-- 前端先備好對應器 `profileFromConcern()`（`module-a-report.ts`）：用關鍵字比對（幼童/小孩、銀髮/長輩、寵物、過敏/氣喘、KOL），有填但判讀不出 → 一般家庭，沒填 → null。**用關鍵字而不是寫死 picklist 值**，因為 SF 的選項標籤尚未確認；拿到真正選項後再收斂成精確對照。
-- 已知限制：目前取第一個命中的關鍵字，多選（例「長輩同住;寵物」）只會判成銀髮。若該欄位是多選，`ProfileId` 要改成陣列。
+- **多重選擇改變了資料結構**：`ReportCustomerRow.profile: ProfileId | null` → `profiles: ProfileId[]`。清單的輪廓欄改成可疊多個標籤，第一個（粗體）是主輪廓。
+- `profilesFromConcern()`：以 `;`／`；`／`,`／`、` 斷詞，逐詞關鍵字比對（幼童/小孩/嬰、銀髮/長輩、寵物/貓/狗、過敏/氣喘/鼻炎/呼吸道、KOL），有填但判讀不出 → 一般家庭，沒填 → 空陣列。**用關鍵字而不是寫死 picklist 值**，因為選項標籤尚未取得；拿到真正選項清單後再收斂成精確對照。
+- `PROFILE_PRIORITY`（健康風險優先）：過敏 > 幼童 > 銀髮 > 寵物 > KOL > 一般。客戶版報告只能有一個主痛點/CTA，多選時取排最前者。**這個排序是假設，需與行銷/CS 確認。**
+- `applyLiveProfiles(row, profiles)`：清單九態是模組載入時算好的靜態值，那時還沒有 SF 資料。中台回來後由元件呼叫這支，把因「缺輪廓」卡在 ② 的設備放行到 ③ 可產製；資料未達標、僅內部版、已寄發等與輪廓無關的狀態不受影響。
+- `MemberHit.family_bothered` / `Member360.profile.family_bothered` 型別已先定義好，中台補上欄位即自動生效，前端不用再改。
 - 待補內容的文案改為「輪廓待接 SF『成員困擾』欄位」，不再寫成 CS 漏填。
 
 ### 中台端點規格（待中台實作）
@@ -154,18 +164,19 @@ GET /api/customers?codes=C2026010030,C2026010055,…
   回傳   { mode, customers: [{ lead_num, id, name, phone, level, created_date,
                                city, area, address, clean_zone, consultant,
                                consultant_dept, next_maintenance,
-                               member_concern }],   ← member_concern = 成員困擾(新增)
+                               family_bothered }],  ← Family_Bothered__c 成員困擾(新增)
            missing: ["C…"] }
   快取   中台端 5–10 分鐘
 ```
 
-同時請把 `member_concern` 一併加進既有的 `/api/member360` profile。
+`family_bothered` 是多重選擇欄位，中台原樣回傳分號分隔字串即可（前端會斷詞）；若中台想回陣列也可以，前端兩種都吃得下。同一個欄位請一併加進既有的 `/api/member360` profile。
 
 前端接法：`useMembersByCodes()` 內部換成單次呼叫即可，呼叫端不用改。
 
 **待使用者/RD 確認**：
-1. 「成員困擾」的 SF API 名稱與選項值（是單選還是多選？自由文字？）
-2. AIRCARE 合格清單的實際判準（`sensor_valid_days` 的門檻是多少）
+1. `Family_Bothered__c` 的**選項清單實際值**（目前用關鍵字比對兜，拿到值才能寫精確對照）
+2. 主輪廓的優先序（現為過敏 > 幼童 > 銀髮 > 寵物 > KOL > 一般，是我方假設）
+3. AIRCARE 合格清單的實際判準（`sensor_valid_days` 的門檻是多少）
 
 ### 項目 5：隱私顯示
 

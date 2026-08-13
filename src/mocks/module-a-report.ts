@@ -72,28 +72,46 @@ export const PROFILE_META: Record<ProfileId, { label: string; color: string; bg:
 /* ── 輪廓 ← Salesforce「成員困擾」欄位 ─────────────────────────────
  * 2026-08-13 決定:客戶輪廓不必人工重補,對應 SF Contact 的「成員困擾」。
  *
- * ⚠ 現況:中台 /api/member360 尚未回傳這個欄位(profile 只有性別/生日/年齡/
- *   縣市/區/地址/分區/顧問/下次定保),所以下面這支對應器目前拿不到輸入,
- *   等中台把欄位吐出來(見 plan 的中台端點規格)接上即可,呼叫端不用改。
+ *   欄位標籤  成員困擾
+ *   API 名稱  Family_Bothered__c
+ *   資料類型  選項清單(多重選擇)→ SF 回傳以分號分隔的字串,例「幼童;寵物」
  *
- * ⚠ 用關鍵字比對而不是寫死 picklist 值:SF 的選項標籤尚未確認,關鍵字比對
- *   對「多選」與「自由文字」都成立,真正的選項值拿到後再收斂成精確對照。 */
+ * ⚠ 現況:中台 /api/member360 尚未回傳這個欄位(profile 只有性別/生日/年齡/
+ *   縣市/區/地址/分區/顧問/下次定保),所以下面這支對應器目前拿不到輸入。
+ *   中台把欄位吐出來後(見 plan 的端點規格),清單與識別卡會自動生效。
+ *
+ * ⚠ 用關鍵字比對而不是寫死 picklist 值:選項標籤尚未取得,關鍵字對多選與
+ *   自由文字都成立;拿到真正的選項清單後再收斂成精確對照表。 */
+export const SF_PROFILE_FIELD = 'Family_Bothered__c'
+
 const CONCERN_KEYWORDS: Array<{ id: ProfileId; words: string[] }> = [
-  { id: 'child',   words: ['幼童', '小孩', '嬰', '孩童', '兒童'] },
-  { id: 'senior',  words: ['銀髮', '長輩', '長者', '老人'] },
-  { id: 'pet',     words: ['寵物', '毛小孩', '貓', '狗'] },
-  { id: 'allergy', words: ['過敏', '氣喘', '鼻炎', '異位性'] },
+  { id: 'child',   words: ['幼童', '小孩', '嬰', '孩童', '兒童', '學齡'] },
+  { id: 'senior',  words: ['銀髮', '長輩', '長者', '老人', '年長'] },
+  { id: 'pet',     words: ['寵物', '毛小孩', '貓', '狗', '毛髮'] },
+  { id: 'allergy', words: ['過敏', '氣喘', '鼻炎', '異位性', '呼吸道', '敏感'] },
   { id: 'kol',     words: ['KOL', '網紅', '意見領袖'] },
 ]
 
-/** 把 SF「成員困擾」的內容轉成報告輪廓;無法判讀但有填 → 一般家庭;沒填 → null */
-export function profileFromConcern(concern: string | null | undefined): ProfileId | null {
-  const t = (concern ?? '').trim()
-  if (!t) return null
-  for (const { id, words } of CONCERN_KEYWORDS) {
-    if (words.some((w) => t.includes(w))) return id
+/** 客戶版報告只能有一個主痛點/CTA,多選時依這個順序取主輪廓(健康風險優先) */
+export const PROFILE_PRIORITY: ProfileId[] = ['allergy', 'child', 'senior', 'pet', 'kol', 'general']
+
+/** 多重選擇 → 輪廓陣列。分號(半形/全形)與逗號都當分隔;有填但判讀不出 → 一般家庭。 */
+export function profilesFromConcern(concern: string | null | undefined): ProfileId[] {
+  const raw = (concern ?? '').trim()
+  if (!raw) return []
+  const tokens = raw.split(/[;；,、]/).map((t) => t.trim()).filter(Boolean)
+  const hit = new Set<ProfileId>()
+  for (const t of tokens) {
+    const m = CONCERN_KEYWORDS.find(({ words }) => words.some((w) => t.includes(w)))
+    if (m) hit.add(m.id)
   }
-  return 'general'
+  if (!hit.size) return ['general']            // 有填但判讀不出,仍算「輪廓已知」
+  return PROFILE_PRIORITY.filter((p) => hit.has(p))
+}
+
+/** 主輪廓(決定客戶版痛點與 CTA);沒填 → null */
+export function primaryProfile(profiles: ProfileId[]): ProfileId | null {
+  return profiles[0] ?? null
 }
 
 /* ── 寄發狀態(規格 §7) ──────────────────────────────────────────── */
@@ -161,7 +179,8 @@ export interface ReportCustomerRow {
   isMember: boolean
   /** 示範資料(非 AIRCARE 合格清單上的真實客戶) */
   isDemo: boolean
-  profile: ProfileId | null
+  /** 輪廓(SF「成員困擾」為多重選擇,故為陣列);空陣列 = 待補輪廓 */
+  profiles: ProfileId[]
   devices: ReportDeviceRow[]
   /** 全部設備同狀態時為該狀態;不同則為 null(清單顯示「展開看各機」) */
   rollupState: ReportState | null
@@ -347,7 +366,7 @@ function buildRealRow(customerNo: string, devs: EligibleDevice[]): ReportCustome
     fieldId: devices.find((d) => d.fieldId)?.fieldId ?? null,
     isMember: false,                     // 會員等級要看 SF,清單不預判
     isDemo: false,
-    profile: null,                       // SF 無輪廓欄位
+    profiles: [],                        // 待中台開放 Family_Bothered__c
     devices,
     rollupState: states.size === 1 ? devices[0].state : null,
   }
@@ -392,7 +411,7 @@ function buildDemoRow(f: FieldRecord): ReportCustomerRow {
     fieldId: f.id,
     isMember: f.tier === 'g',
     isDemo: true,
-    profile: ov.profile,
+    profiles: ov.profile ? [ov.profile] : [],
     devices,
     rollupState: states.size === 1 ? devices[0].state : null,
   }
@@ -405,6 +424,20 @@ export const REPORT_ROWS: ReportCustomerRow[] = [
   ...Object.entries(ELIGIBLE_BY_CUSTOMER).map(([no, devs]) => buildRealRow(no, devs)),
   ...DEMO_FIELDS.map(buildDemoRow),
 ]
+
+/* ── 中台回來的輪廓套進列上 ────────────────────────────────────────
+ * 清單的九態是在模組載入時算好的靜態值,那時還沒有 Salesforce 資料。
+ * 中台開放 Family_Bothered__c 後,元件拿到「成員困擾」就呼叫這支,把因為
+ * 「缺輪廓」而卡在 ② 的設備放行到 ③ 可產製。其他狀態(資料未達標、僅內部版、
+ * 已寄發…)不受影響 —— 那些跟輪廓無關。 */
+export function applyLiveProfiles(row: ReportCustomerRow, profiles: ProfileId[]): ReportCustomerRow {
+  if (!profiles.length || row.profiles.length) return row
+  const devices = row.devices.map((d) =>
+    d.state === 'need-profile' ? { ...d, state: 'ready' as ReportState, blocked: '' } : d,
+  )
+  const states = new Set(devices.map((d) => d.state))
+  return { ...row, profiles, devices, rollupState: states.size === 1 ? devices[0].state : null }
+}
 
 /* ── KPI 四格(規格 §4) ────────────────────────────────────────────
  * 每格都拆「真實 / 示範」—— 清單同時有 AIRCARE 合格清單的真實客戶與 9 筆示範,

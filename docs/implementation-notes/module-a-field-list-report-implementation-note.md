@@ -54,6 +54,33 @@
 - `AFieldList` 加真分頁（20 筆/頁）、示範標記、「待報告產出」空狀態、停用箭頭、KPI 真實/示範分子、母體來源說明列。
 - 新增 `profileFromConcern()`：SF「成員困擾」→ 報告輪廓的關鍵字對應（中台尚未回傳該欄位，先備好）。
 
+### 項目 8 續：成員困擾是多重選擇（第四輪，2026-08-13）
+拿到欄位定義：`Family_Bothered__c`，選項清單（多重選擇）。
+
+- `ReportCustomerRow.profile: ProfileId | null` → `profiles: ProfileId[]`；清單輪廓欄可疊多個標籤，第一個粗體為主輪廓。
+- `profileFromConcern()` → `profilesFromConcern()`：以 `;；,、` 斷詞後逐詞比對，回傳依 `PROFILE_PRIORITY`（過敏 > 幼童 > 銀髮 > 寵物 > KOL > 一般）排序的陣列。
+- 新增 `applyLiveProfiles(row, profiles)`：中台回傳輪廓後，把卡在 ② 待補輪廓的設備放行到 ③ 可產製；其餘狀態不動。`AFieldList` 已呼叫，中台一開放欄位就生效。
+- `MemberHit.family_bothered` 與 `Member360.profile.family_bothered` 型別先定義好。
+
+實跑驗證（esbuild + node）：
+
+```
+"幼童"          → ["child"]                    主 child
+"幼童;寵物"      → ["child","pet"]              主 child
+"長輩;過敏;寵物"  → ["allergy","senior","pet"]    主 allergy
+"貓;狗"         → ["pet"]                      主 pet
+"過敏、氣喘"     → ["allergy"]                   主 allergy
+"其他"          → ["general"]                  主 general
+"" / null      → []                           主 null
+"幼童；銀髮"(全形) → ["child","senior"]           主 child
+
+applyLiveProfiles:
+  C2026010030  need-profile / [] / 「輪廓待接 SF 成員困擾欄位」
+    → 套用「幼童;過敏」→ ready / [allergy, child] / 待補內容清空
+  資料未達標的列        insufficient → insufficient(不受影響)
+  示範列已有輪廓        [senior] → [senior](不被覆寫)
+```
+
 ## 驗證紀錄
 
 ```

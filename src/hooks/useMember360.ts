@@ -17,6 +17,10 @@ export interface MemberHit {
   /* 客戶編號(SF Contact.LeadNum__c「客戶編號(C)」,無值時退 LeadNum_F__c)。
    * 設備分析報告的 customer.code 就是這個欄位 —— Module A 場域 ↔ SF 會員的接點。 */
   lead_num?: string
+  /* 成員困擾(SF Contact.Family_Bothered__c,選項清單/多重選擇 → 分號分隔字串)。
+   * 報告的「客戶輪廓」由這個欄位推出(見 mocks/module-a-report.ts 的 profilesFromConcern)。
+   * ⚠ 中台目前尚未回傳,欄位先定義好;中台補上後前端自動生效。 */
+  family_bothered?: string
 }
 
 export interface MemberPurchase {
@@ -60,6 +64,7 @@ export interface Member360 {
     consultant?: string    // 服務顧問 = 最近一次消費業務(SalesBy__c)
     consultant_dept?: string // 業務員部門(成員部門,SalesByDepartment__c)
     next_maintenance?: string // 下次定保(SF 型別為 string)
+    family_bothered?: string // 成員困擾(Family_Bothered__c,多重選擇 → 分號分隔);中台待補
   }
   purchase_summary: { total: number; count: number; first_d: string; last_d: string }
   purchases: MemberPurchase[]

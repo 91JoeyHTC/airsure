@@ -17,6 +17,8 @@ import {
   REPORT_STATE_ORDER,
   REPORT_DATA_THRESHOLD_DAYS,
   PROFILE_META,
+  profilesFromConcern,
+  applyLiveProfiles,
   SEND_META,
   TIER_DOT,
   tierOfCat,
@@ -158,7 +160,7 @@ function DeviceRow({ d, isDemo, onSelect }: { d: ReportDeviceRow; isDemo: boolea
 
 /* ── 客戶列 ───────────────────────────────────────────── */
 function CustomerRow({
-  row, expanded, onToggle, onSelect, live, resolving,
+  row: rawRow, expanded, onToggle, onSelect, live, resolving,
 }: {
   row: ReportCustomerRow
   expanded: boolean
@@ -168,11 +170,14 @@ function CustomerRow({
   live: MemberHit | null
   resolving: boolean
 }) {
+  /* 輪廓來自 SF「成員困擾」(多重選擇)。中台回來後,原本卡在「② 待補輪廓」
+   * 的設備要跟著放行到「③ 可產製」—— 靜態算好的九態不知道 SF 有資料。 */
+  const row = applyLiveProfiles(rawRow, profilesFromConcern(live?.family_bothered))
+
   const multi = row.devices.length > 1
   const first = row.devices[0]
   const uniformCat = row.devices.every((d) => d.cat === first.cat)
   const uniformSend = row.devices.every((d) => d.send === first.send)
-  const profile = row.profile ? PROFILE_META[row.profile] : null
 
   /* 姓名優先序:中台即時 > mock 名 > 客戶編號。
    * 真實設備的 mock 名就是客戶編號本身(個資不落地),此時只有中台查得到人。 */
@@ -208,9 +213,28 @@ function CustomerRow({
           <div className="dt-sub" style={{ fontSize: 10, color: 'var(--as-mute)' }}>{row.fieldNm} · {row.addr}</div>
         </td>
         <td>
-          {profile
-            ? <span className="pill" style={{ background: profile.bg, borderColor: profile.color + '40', color: profile.color, fontWeight: 600 }}>{profile.label}</span>
-            : <span className="pill r">待補輪廓</span>}
+          {row.profiles.length === 0
+            ? <span className="pill r">待補輪廓</span>
+            : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, maxWidth: 150 }}>
+                {row.profiles.map((p, i) => {
+                  const meta = PROFILE_META[p]
+                  return (
+                    <span
+                      key={p}
+                      className="pill"
+                      title={i === 0 ? '主輪廓 · 決定客戶版痛點與 CTA' : undefined}
+                      style={{
+                        background: meta.bg, borderColor: meta.color + '40', color: meta.color,
+                        fontWeight: i === 0 ? 700 : 500, fontSize: 10,
+                      }}
+                    >
+                      {meta.label}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
         </td>
         <td onClick={(e) => { if (multi) { e.stopPropagation(); onToggle() } }}>
           <span style={{ whiteSpace: 'nowrap', fontWeight: multi ? 600 : 400, color: multi ? 'var(--as-ink)' : 'var(--as-ink-2)' }}>
