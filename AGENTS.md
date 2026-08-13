@@ -177,7 +177,9 @@ git diff --cached --check
 
 本專案的真實營運數據**不直接連 Salesforce**,一律透過「克立淨數據中台」取得:
 
-- 中台程式碼:`~/repos/DB/sf-dashboard`(FastAPI,啟動:`.venv/bin/uvicorn app:app --port 8000`)
+- 中台程式碼:`~/repos/dataspec/sf-dashboard`(FastAPI,啟動:`.venv/bin/uvicorn app:app --port 8000`)
+  - 2026-08-13 更正路徑:舊文件寫的 `~/repos/DB/sf-dashboard`、`Cleanstation/sf-dashboard` 都已不存在。
+    要確認實際位置:`lsof -a -p $(lsof -t -iTCP:8000 -sTCP:LISTEN) -d cwd`
 - 中台授權:OAuth 2.0 Client Credentials(憑證只存在中台的 `.env`,本 repo 不得存放任何 Salesforce 憑證)
 - 本專案以 `VITE_MIDDLE_API` 環境變數指定中台網址(預設 `http://localhost:8000`)
 

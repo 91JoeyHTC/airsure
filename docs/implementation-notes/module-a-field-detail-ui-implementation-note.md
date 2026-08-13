@@ -17,7 +17,7 @@ Salesforce Contact 上存客戶編號的欄位是 **`LeadNum__c`「客戶編號(
 前綴同時支援「輸入完整編號」與「輸入 `C202601` 找同批」。
 
 `/api/members` 與 `/api/member360` 都新增回傳 `lead_num`。
-(中台在 `Cleanstation/sf-dashboard`,與本 repo 分開。)
+(中台在 `~/repos/dataspec/sf-dashboard`,與本 repo 分開。)
 
 ### 前端:身分改為即時查,repo 不存個資
 上一輪為了讓識別卡可點,把 Contact Id + 姓名寫進 `SF_CONTACT_BY_CUSTOMER`,且只有 1 筆查得到。

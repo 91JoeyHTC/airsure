@@ -7,7 +7,7 @@
 - **需求來源**:使用者要求將 Module B(用戶 360° 視圖)串接 Salesforce 資料;經確認範圍鎖定「個人 360° 紀錄」(消費紀錄 + 服務紀錄改 Live)。
 - **目標頁面 / 流程**:`/module-b` → 個人 360° 視圖 tab(`PersonaView`)。新增會員搜尋;選定真實會員後整頁切換為該會員的 Live 360°,可返回示範會員(王曉明 mock)。
 - **目標檔案**:
-  - 中台(另一 repo):`~/repos/DB/sf-dashboard/app.py` — 新增 2 個端點
+  - 中台(另一 repo):`~/repos/dataspec/sf-dashboard/app.py` — 新增 2 個端點
   - 前端:`src/hooks/useMember360.ts`(新)、`src/modules/module-b/Member360Live.tsx`(新)、`src/modules/module-b/ModuleB.tsx`(小幅修改 PersonaView)
   - 文件:本 plan、`docs/implementation-notes/member360-implementation-note.md`、`AGENTS.md` 已接端點表
 - **目前問題**:`PersonaView` 整頁掛在固定 mock 會員 `WANG_PROFILE`;消費(`FINANCE_RECORDS`)與服務(`w.repairOrders` 等)全為假資料,無法查看真實客戶。
