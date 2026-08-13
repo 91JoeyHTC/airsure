@@ -57,14 +57,17 @@ export const REPORT_STATE_ORDER: ReportState[] = [
   'insufficient', 'need-profile', 'ready', 'internal', 'review', 'approved', 'sent', 'opened', 'overdue',
 ]
 
-/* ── 客戶輪廓(規格 §4:決定客戶版痛點與 CTA) ───────────────────── */
-export type ProfileId = 'child' | 'senior' | 'pet' | 'allergy' | 'general' | 'kol'
+/* ── 客戶輪廓(規格 §4:決定客戶版痛點與 CTA) ─────────────────────
+ * child / senior / pet / allergy / illness 一對一對應 SF「成員困擾」的五個選項;
+ * general = 有填但判讀不出;kol 目前 SF 沒有對應選項,保留給示範與人工標記。 */
+export type ProfileId = 'child' | 'senior' | 'pet' | 'allergy' | 'illness' | 'general' | 'kol'
 
 export const PROFILE_META: Record<ProfileId, { label: string; color: string; bg: string }> = {
-  child:   { label: '幼童家庭', color: '#2F74B5', bg: '#E4EFF7' },
+  child:   { label: '幼童/孕婦', color: '#2F74B5', bg: '#E4EFF7' },
   senior:  { label: '銀髮家庭', color: '#7C5CBF', bg: '#EFEAFA' },
   pet:     { label: '寵物家庭', color: '#E0862A', bg: '#FBEED9' },
   allergy: { label: '過敏家庭', color: '#D1495B', bg: '#FBE6E9' },
+  illness: { label: '家人生病', color: '#0F766E', bg: '#CCFBF1' },
   general: { label: '一般家庭', color: 'var(--as-ink-2)', bg: 'var(--as-bg)' },
   kol:     { label: 'KOL',      color: '#C99A2E', bg: '#FDF3D9' },
 }
@@ -76,32 +79,47 @@ export const PROFILE_META: Record<ProfileId, { label: string; color: string; bg:
  *   API 名稱  Family_Bothered__c
  *   資料類型  選項清單(多重選擇)→ SF 回傳以分號分隔的字串,例「幼童;寵物」
  *
+ * 選項清單(2026-08-13 由 Contact describe 取得,五個全部啟用):
+ *   家有孕婦/家有新生兒/小孩 · 家人過敏 · 家人生病 · 家有長輩 · 家有寵物
+ *   → 注意沒有「一般」也沒有 KOL 選項;沒勾任何項 = 空字串 = 待補輪廓。
+ *
  * ⚠ 現況:中台 /api/member360 尚未回傳這個欄位(profile 只有性別/生日/年齡/
  *   縣市/區/地址/分區/顧問/下次定保),所以下面這支對應器目前拿不到輸入。
- *   中台把欄位吐出來後(見 plan 的端點規格),清單與識別卡會自動生效。
- *
- * ⚠ 用關鍵字比對而不是寫死 picklist 值:選項標籤尚未取得,關鍵字對多選與
- *   自由文字都成立;拿到真正的選項清單後再收斂成精確對照表。 */
+ *   中台把欄位吐出來後(見 plan 的端點規格),清單與識別卡會自動生效。 */
 export const SF_PROFILE_FIELD = 'Family_Bothered__c'
 
+/** 選項值 → 輪廓的精確對照(以 SF describe 的實際 picklist 值為準) */
+export const CONCERN_OPTION_MAP: Record<string, ProfileId> = {
+  '家有孕婦/家有新生兒/小孩': 'child',
+  '家人過敏': 'allergy',
+  '家人生病': 'illness',
+  '家有長輩': 'senior',
+  '家有寵物': 'pet',
+}
+
+/** 關鍵字後備:選項若日後新增/改名,不至於整個判成「一般」 */
 const CONCERN_KEYWORDS: Array<{ id: ProfileId; words: string[] }> = [
-  { id: 'child',   words: ['幼童', '小孩', '嬰', '孩童', '兒童', '學齡'] },
-  { id: 'senior',  words: ['銀髮', '長輩', '長者', '老人', '年長'] },
-  { id: 'pet',     words: ['寵物', '毛小孩', '貓', '狗', '毛髮'] },
-  { id: 'allergy', words: ['過敏', '氣喘', '鼻炎', '異位性', '呼吸道', '敏感'] },
+  { id: 'child',   words: ['孕婦', '新生兒', '幼童', '小孩', '嬰', '孩童', '兒童'] },
+  { id: 'senior',  words: ['長輩', '銀髮', '長者', '老人', '年長'] },
+  { id: 'pet',     words: ['寵物', '毛小孩', '貓', '狗'] },
+  { id: 'allergy', words: ['過敏', '氣喘', '鼻炎', '異位性', '呼吸道'] },
+  { id: 'illness', words: ['生病', '病', '術後', '慢性'] },
   { id: 'kol',     words: ['KOL', '網紅', '意見領袖'] },
 ]
 
-/** 客戶版報告只能有一個主痛點/CTA,多選時依這個順序取主輪廓(健康風險優先) */
-export const PROFILE_PRIORITY: ProfileId[] = ['allergy', 'child', 'senior', 'pet', 'kol', 'general']
+/** 客戶版報告只能有一個主痛點/CTA,多選時依這個順序取主輪廓(健康風險優先)。
+ *  ⚠ 這個排序是我方假設,待行銷/CS 確認。 */
+export const PROFILE_PRIORITY: ProfileId[] = ['allergy', 'illness', 'child', 'senior', 'pet', 'kol', 'general']
 
-/** 多重選擇 → 輪廓陣列。分號(半形/全形)與逗號都當分隔;有填但判讀不出 → 一般家庭。 */
+/** 多重選擇 → 輪廓陣列。SF 以分號分隔;先走精確對照,對不上才用關鍵字。 */
 export function profilesFromConcern(concern: string | null | undefined): ProfileId[] {
   const raw = (concern ?? '').trim()
   if (!raw) return []
   const tokens = raw.split(/[;；,、]/).map((t) => t.trim()).filter(Boolean)
   const hit = new Set<ProfileId>()
   for (const t of tokens) {
+    const exact = CONCERN_OPTION_MAP[t]
+    if (exact) { hit.add(exact); continue }
     const m = CONCERN_KEYWORDS.find(({ words }) => words.some((w) => t.includes(w)))
     if (m) hit.add(m.id)
   }

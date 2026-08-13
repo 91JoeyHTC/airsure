@@ -81,6 +81,31 @@ applyLiveProfiles:
   示範列已有輪廓        [senior] → [senior](不被覆寫)
 ```
 
+### 項目 8 再續：拿到選項清單、實際比對 72 筆（第五輪，2026-08-13）
+
+中台不吐這個欄位，改用中台自己的 `SalesforceClient`（`/Users/joeyshiue/repos/dataspec/sf-dashboard`，**AGENTS.md §10 寫的 `~/repos/DB/sf-dashboard` 是舊路徑**）寫唯讀腳本查詢，不改中台、不重啟服務。
+
+`Contact` describe 結果：`Family_Bothered__c`，`multipicklist`，五個選項全部啟用 ——
+家有孕婦/家有新生兒/小孩、家人過敏、家人生病、家有長輩、家有寵物。
+
+**「家人生病」原本的輪廓分類沒有** → 新增 `ProfileId = 'illness'`（標籤「家人生病」）。`child` 標籤同步改成「幼童/孕婦」，因為該選項涵蓋孕婦與新生兒。
+
+69 位合格客戶實際填答：查得 69/69，**只有 10 位有填**（14.5%）。選項計次 家人過敏 6 / 家有孕婦·新生兒·小孩 5 / 家有寵物 2 / 家人生病 1 / 家有長輩 0。
+
+關鍵字比對改成「精確對照優先、關鍵字後備」，六種實際組合驗證：
+
+```
+家人過敏;家有孕婦/家有新生兒/小孩 → [allergy, child]  主 allergy
+家人過敏                      → [allergy]         主 allergy
+家有孕婦/家有新生兒/小孩          → [child]           主 child
+家人過敏;家有寵物               → [allergy, pet]    主 allergy
+家人生病                      → [illness]         主 illness
+家有寵物 / 家有長輩             → [pet] / [senior]
+(空白)                       → []               待補輪廓
+```
+
+**逐筆結果不落地**：客戶編號 ↔ 家人過敏/家人生病 屬健康相關個資，只在執行期向中台取，不寫進 repo（AGENTS.md §7）。查詢腳本放在 session scratchpad，未進版控。
+
 ## 驗證紀錄
 
 ```
