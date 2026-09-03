@@ -270,7 +270,7 @@ import { batchAttrs } from '../../components/ui/BatchAttrs'
 
 ### 7.2 `src/data/batch-map.ts`(v4 新加)
 
-62 列卡片對照表,key 慣例 `<Module>.<Tab>.<卡片名>` 例:`'A.整體.六大類型分布'`。
+62 列卡片對照表,key 慣例 `<Module>.<Tab>.<卡片名>` 例:`'A.設備總覽.七分群分布'`。
 每筆含 `batch / source / note / warn`(可選)。
 
 ### 7.3 其他 mock(v4 維持 v3)

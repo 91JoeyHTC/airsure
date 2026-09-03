@@ -2,7 +2,7 @@
  * 把 BATCH_MAP 的 key 轉成 spread 進 JSX 的 data-* attribute。
  *
  * 用法：
- *   <div className="card" {...batchAttrs('A.整體.六大類型分布')}>
+ *   <div className="card" {...batchAttrs('A.設備總覽.七分群分布')}>
  *
  * 若 key 不在表內會回傳空 object，不破壞畫面。
  */

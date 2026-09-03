@@ -3,6 +3,10 @@
 > 日期：2026-09-03
 > Item packet：`docs/module-a-device-overview-plan.md`
 > 分級：大改（跨元件、篩選、欄位、mock 資料流、文件）
+>
+> ⚠ **2026-09-03 稍後被 `module-a-v2-alignment-implementation-note.md` 取代部分結論**：
+> 六大類型改為七分群、PM2.5／濕度級距改用 AirCare v2 門檻、分群改由 P×H 矩陣推導，
+> 本文列的檯面數字（平均 PM2.5 2.0 / 濕度 58 / AirCare 82、六大類型分布）已過期。
 
 ---
 

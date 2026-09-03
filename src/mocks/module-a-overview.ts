@@ -9,6 +9,10 @@ import {
   FIELDS_A_POP,
   REAL_FIELD_IDS,
   regionOfName,
+  aircareIndex,
+  AIR_QUALITY_DIST,
+  HUMIDITY_DIST,
+  CATEGORIES,
   DEVICE_MODELS,
   POWER_STATES,
   USAGE_MODES,
@@ -16,6 +20,7 @@ import {
   type DeviceModel,
   type PowerState,
   type UsageMode,
+  type CatId,
 } from './module-a'
 
 /* ── 時間區間 ─────────────────────────────────────────────────────────── */
@@ -33,10 +38,10 @@ export const DEFAULT_RANGE: TimeRange = '90d'
 
 /* 示範列的區間位移。真實三台不吃這組係數(它們從 daily 真算),
  * 這裡只讓示範母體在切換區間時有一致方向的變化:越短期越貼近近期空污與梅雨。 */
-const RANGE_SHIFT: Record<TimeRange, { pm: number; humidity: number; temp: number; q: number }> = {
-  '7d': { pm: 1.35, humidity: +2.4, temp: +1.1, q: -3 },
-  '30d': { pm: 1.12, humidity: +1.0, temp: +0.4, q: -1 },
-  '90d': { pm: 1, humidity: 0, temp: 0, q: 0 },
+const RANGE_SHIFT: Record<TimeRange, { pm: number; humidity: number; temp: number }> = {
+  '7d': { pm: 1.35, humidity: +2.4, temp: +1.1 },
+  '30d': { pm: 1.12, humidity: +1.0, temp: +0.4 },
+  '90d': { pm: 1, humidity: 0, temp: 0 },
 }
 
 /* ── 真實設備的區間量測值(由 daily 真算,不套係數) ─────────────────── */
@@ -88,11 +93,15 @@ export function metricsFor(f: FieldRecord, range: TimeRange): FieldMetrics {
   /* 抖動幅度隨區間縮短放大 —— 短期本來就比長期不穩 */
   const amp = range === '7d' ? 0.22 : 0.09
   const j = jitterOf(f.id)
+  const pm = Math.max(0.1, r1(f.pm * s.pm * (1 + j * amp)))
+  const humidity = Math.min(95, Math.max(20, r1(f.humidity + s.humidity + j * amp * 22)))
   return {
-    pm: Math.max(0.1, r1(f.pm * s.pm * (1 + j * amp))),
-    humidity: Math.min(95, Math.max(20, r1(f.humidity + s.humidity + j * amp * 22))),
+    pm,
+    humidity,
     temp: r1(f.temp + s.temp + j * amp * 5),
-    q: Math.min(100, Math.max(0, Math.round(f.q + s.q + j * amp * 14))),
+    /* 分數跟著位移後的 pm / 濕度重算(v2 §4)—— 獨立位移分數會讓同一列的
+     * 分數與自己的量測值對不起來,分群卡與分數卡就會互相打臉 */
+    q: Math.round(aircareIndex(pm, humidity)),
   }
 }
 
@@ -105,22 +114,16 @@ export interface Bucket {
   hi: number
 }
 
-/* 門檻依室內實測訂,不是套室外 AQI:三台真實設備 90 天平均 PM2.5 是 1.4 / 2.5 / 3.6,
- * 若沿用室外的 15/35/55 分級,整份母體會全部塞進同一格,篩選等於沒作用。 */
-export const PM_BUCKETS: Bucket[] = [
-  { k: 'pm0', label: '優 · < 2', lo: 0, hi: 2 },
-  { k: 'pm1', label: '良好 · 2–5', lo: 2, hi: 5 },
-  { k: 'pm2', label: '普通 · 5–10', lo: 5, hi: 10 },
-  { k: 'pm3', label: '不佳 · ≥ 10', lo: 10, hi: Infinity },
-]
+/* 篩選級距直接由 AIR_QUALITY_DIST / HUMIDITY_DIST 展開 —— 兩者共用同一份 v2 定義,
+ * 篩「>65–75%」時分布卡「偏濕」那一列就是同一批場域。各寫一套的話,下拉選
+ * 「過乾 <40%」而卡片畫「≤45%」,同一畫面兩套標準。 */
+export const PM_BUCKETS: Bucket[] = AIR_QUALITY_DIST.map((d, i) => ({
+  k: `pm${i}`, label: `${d.lvl} · ${d.range.replace('PM2.5 ', '')}`, lo: d.lo, hi: d.hi,
+}))
 
-export const HUMIDITY_BUCKETS: Bucket[] = [
-  { k: 'hu0', label: '過乾 · < 40%', lo: 0, hi: 40 },
-  { k: 'hu1', label: '偏乾 · 40–50%', lo: 40, hi: 50 },
-  { k: 'hu2', label: '舒適 · 50–60%', lo: 50, hi: 60 },
-  { k: 'hu3', label: '偏濕 · 60–70%', lo: 60, hi: 70 },
-  { k: 'hu4', label: '過濕 · ≥ 70%', lo: 70, hi: Infinity },
-]
+export const HUMIDITY_BUCKETS: Bucket[] = HUMIDITY_DIST.map((d, i) => ({
+  k: `hu${i}`, label: `${d.band} ${d.lvl} · ${d.range.replace('濕度 ', '')}`, lo: d.lo, hi: d.hi,
+}))
 
 const inBucket = (v: number, list: Bucket[], k: string): boolean => {
   const b = list.find((x) => x.k === k)
@@ -224,4 +227,55 @@ export function computeOverviewKpi(rows: FieldRecord[], range: TimeRange): Overv
     realFields: real.length,
     realDevices: real.reduce((s, r) => s + r.devTotal, 0),
   }
+}
+
+/* ── 級距分布(空氣品質 / 濕度控制兩張卡) ──────────────────────────────
+ * 筆數一律由當前 filtered 母體算,不是寫死的 —— 否則篩選一動,
+ * 上面的 KPI 變了、這兩張卡不動,同一畫面又會出現兩套母體。
+ * 每一級同時列出實際落在該級的分群,取代舊版寫死的 catIds
+ * (舊版「過乾」那列的 catIds 是空陣列,18 個場域對不到任何類型)。 */
+
+export interface TierCount {
+  lvl: string
+  range: string
+  n: number
+  pct: number
+  color: string
+  bg: string
+  /** 實際落在這一級的分群(依母體算出來,不是硬綁) */
+  cats: CatId[]
+}
+
+function tally(
+  rows: FieldRecord[],
+  range: TimeRange,
+  bands: { lvl: string; range: string; lo: number; hi: number; color: string; bg: string }[],
+  pick: (m: FieldMetrics) => number,
+): TierCount[] {
+  return bands.map((b) => {
+    const hit = rows.filter((f) => {
+      const v = pick(metricsFor(f, range))
+      return v > (b.lo === 0 ? -Infinity : b.lo) && v <= b.hi
+    })
+    const cats = CATEGORIES.map((c) => c.id).filter((id) => hit.some((f) => f.cat === id))
+    return {
+      lvl: b.lvl,
+      range: b.range,
+      n: hit.length,
+      pct: rows.length === 0 ? 0 : Math.round((hit.length / rows.length) * 1000) / 10,
+      color: b.color,
+      bg: b.bg,
+      cats,
+    }
+  })
+}
+
+/** PM2.5 報告級距分布(v2 §4.1 末段:極淨 / 優良 / 尚可 / 待改善 / 不健康) */
+export function computeAirQualityDist(rows: FieldRecord[], range: TimeRange): TierCount[] {
+  return tally(rows, range, AIR_QUALITY_DIST, (m) => m.pm)
+}
+
+/** 濕度分群等級分布(v2 §3.3:HH / H1 / H2 / H3 / H4) */
+export function computeHumidityDist(rows: FieldRecord[], range: TimeRange): TierCount[] {
+  return tally(rows, range, HUMIDITY_DIST, (m) => m.humidity)
 }

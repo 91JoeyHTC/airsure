@@ -12,8 +12,6 @@ import {
   FIELD_DELTAS,
   REGION_HEALTH,
   SITE_TYPES,
-  AIR_QUALITY_DIST,
-  HUMIDITY_DIST,
   AHI_TREND,
   SEGMENTS_A,
   CATEGORIES,
@@ -31,6 +29,7 @@ import {
   getFieldDetail,
   reportGateOf,
   type CatId,
+  type CategoryMeta,
   type Disposition,
   type FieldRecord,
   type FieldDetail,
@@ -47,7 +46,10 @@ import {
   computeOverviewKpi,
   metricsFor,
   activeFilterCount,
+  computeAirQualityDist,
+  computeHumidityDist,
   type OverviewFilters,
+  type TierCount,
 } from '../../mocks/module-a-overview'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
 import type { DeviceReport } from '../../mocks/devices'
@@ -99,6 +101,69 @@ function OvFilter({ label, value, options, onChange }: {
         {options.map((o) => <option key={o.k} value={o.k}>{o.label}</option>)}
       </select>
     </label>
+  )
+}
+
+/* 級距分布卡(空氣品質 / 濕度控制)。兩張結構相同,筆數一律由
+ * computeAirQualityDist / computeHumidityDist 依當前 filtered 母體算好才傳進來。
+ * 每一級下方的分群 chip 也是算出來的,不是硬綁 —— 舊版寫死的 catIds 讓「過乾」
+ * 那一級對不到任何分群。 */
+function TierDistCard({ icon, title, sub, headline, tiers, catMeta, batch }: {
+  icon: 'wind' | 'drop'
+  title: string
+  sub: string
+  headline: string
+  tiers: TierCount[]
+  catMeta: (id: CatId) => CategoryMeta
+  batch: string
+}) {
+  return (
+    <div className="card" {...batchAttrs(batch)}>
+      <div className="ch">
+        <div>
+          <h3><Icon name={icon} size={14} /> {title}</h3>
+          <div className="csub">{sub}</div>
+        </div>
+        <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{headline}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+        {tiers.map((d) => (
+          <div key={d.lvl} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 44, height: 28, borderRadius: 6, background: d.bg,
+              color: d.color, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0,
+            }}>{d.lvl}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                <span style={{ color: 'var(--as-ink-2)' }}>{d.range}</span>
+                <span className="mono" style={{ fontWeight: 600 }}>
+                  {d.n.toLocaleString()}
+                  <span style={{ color: 'var(--as-mute)', fontWeight: 400, marginLeft: 4 }}>({d.pct}%)</span>
+                </span>
+              </div>
+              <div style={{ height: 6, background: 'var(--as-line-2)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${d.pct}%`, height: '100%', background: d.color, borderRadius: 3 }}></div>
+              </div>
+              {d.cats.length > 0 && (
+                <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {d.cats.map((id) => {
+                    const m = catMeta(id)
+                    return (
+                      <span key={id} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        fontSize: 9, padding: '1px 6px', borderRadius: 8,
+                        background: m.bg, color: m.color, fontWeight: 600,
+                      }}>{m.id} {m.code}</span>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -165,6 +230,8 @@ function AOverview({
     return rows.filter((f) => ids.includes(f.cat)).length
   }
   const upsellCount = (cid: CatId) => rows.filter((f) => f.cat === cid).length
+  const airTiers = useMemo(() => computeAirQualityDist(rows, filters.range), [rows, filters.range])
+  const humTiers = useMemo(() => computeHumidityDist(rows, filters.range), [rows, filters.range])
 
   const pageCount = Math.max(1, Math.ceil(rows.length / OVERVIEW_PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
@@ -268,12 +335,12 @@ function AOverview({
         <OvKpi
           tone="green" lbl="平均 PM2.5" val={empty ? '—' : kpi.pm.toFixed(1)} unit="µg/m³"
           foot={`WHO 指引 ${WHO_PM25_GUIDELINE} µg/m³ 以下`} footTone="up"
-          spark={[8, 7, 6, 6, 5, 4, 3, 2]} sparkColor="var(--as-success)"
+          spark={[6.8, 6.2, 5.6, 5.1, 4.8, 4.6, 4.3, 4.1]} sparkColor="var(--as-success)"
         />
         <OvKpi
           tone="purple" lbl="平均濕度" val={empty ? '—' : String(kpi.humidity)} unit="%"
-          foot="舒適區間 50–60%" footTone={!empty && kpi.humidity >= 50 && kpi.humidity <= 60 ? 'up' : ''}
-          spark={[55, 56, 57, 58, 58, 57, 58, 58]} sparkColor="var(--as-cdefg)"
+          foot="v2 舒適區間 H1 · >45–60%" footTone={!empty && kpi.humidity > 45 && kpi.humidity <= 60 ? 'up' : ''}
+          spark={[58, 59, 60, 60, 61, 61, 61, 61]} sparkColor="var(--as-cdefg)"
         />
         <OvKpi
           tone="purple" lbl="平均溫度" val={empty ? '—' : kpi.temp.toFixed(1)} unit="°C"
@@ -314,15 +381,32 @@ function AOverview({
         </span>
       </div>
 
-      {/* 六大類型分布 + 類型流動(Phase 1.5) */}
+      {/* 空氣品質 / 濕度控制 —— 級距是分群的兩個輸入軸,擺在七分群分布上面,
+          由「級距 → 分群」的順序讀下來(2026-09-03 從分類概況搬過來) */}
       <div className="two-col" style={{ marginTop: 16 }}>
-        {/* 六大類型分布 */}
-        <div className="card" {...batchAttrs('A.設備總覽.六大類型分布')}>
+        <TierDistCard
+          icon="wind" title="空氣品質" batch="A.設備總覽.空品濕度分布"
+          sub={`PM2.5 · v2 報告級距 5 級 · ${activeCount > 0 ? '目前條件' : '全部'} ${rows.length.toLocaleString()} 場域`}
+          headline={empty ? '—' : `${(airTiers[0].pct + airTiers[1].pct).toFixed(1)}% 達極淨／優良`}
+          tiers={airTiers} catMeta={catMeta}
+        />
+        <TierDistCard
+          icon="drop" title="濕度控制" batch="A.設備總覽.空品濕度分布"
+          sub={`相對濕度 · v2 分群等級 HH–H4 · ${activeCount > 0 ? '目前條件' : '全部'} ${rows.length.toLocaleString()} 場域`}
+          headline={empty ? '—' : `${humTiers[1].pct.toFixed(1)}% 處於舒適區 H1`}
+          tiers={humTiers} catMeta={catMeta}
+        />
+      </div>
+
+      {/* 七分群分布 + 類型流動(Phase 1.5) */}
+      <div className="two-col" style={{ marginTop: 16 }}>
+        {/* 七分群分布 */}
+        <div className="card" {...batchAttrs('A.設備總覽.七分群分布')}>
           <div className="ch">
             <div>
-              <h3>六大類型分布</h3>
+              <h3>七分群分布</h3>
               <div className="csub">
-                方案 C 業務端代號 · {activeCount > 0 ? `目前條件 ${rows.length.toLocaleString()}` : `全 ${rows.length.toLocaleString()}`} 場域 · 直接對應派工優先級
+                AirCare v2 · P×H 決策矩陣 · {activeCount > 0 ? `目前條件 ${rows.length.toLocaleString()}` : `全 ${rows.length.toLocaleString()}`} 場域 · 直接對應派工優先級
               </div>
             </div>
             <span style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--as-mute)' }}>
@@ -715,7 +799,7 @@ function AOverview({
               <th>機型</th>
               <th>電源</th>
               <th>使用模式</th>
-              <th>六大類型</th>
+              <th>分群</th>
               <th>設備</th>
               <th>狀態</th>
               <th>PM2.5</th>
@@ -852,9 +936,9 @@ function fieldGroupIndex(segIndex: number, f: FieldRecord): number {
     return 2
   }
   if (segIndex === 2) {
-    // 水箱頻率 ≈ 由六大類型推導:④/⑥ 除濕需求高;⑤ 除濕需求低;其餘一般
+    // 水箱頻率 ≈ 由分群推導:④濕度風險/⑥雙風險 除濕需求高;⑤清淨風險與⑦乾燥 需求低
     if (f.cat === '4' || f.cat === '6') return 0
-    if (f.cat === '5') return 2
+    if (f.cat === '5' || f.cat === '7') return 2
     return 1
   }
   return 0
@@ -868,108 +952,9 @@ function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
     <>
       {/* 分群層 hero 已依 2026-05-29 PDF 拉掉 */}
 
-      {/* 統一 2×3 grid(一排兩個):空氣品質 / 濕度控制 / 分群卡 × 3 / 場域類型分佈(右下) */}
+      {/* 2 欄 grid:分群卡 × 3 / 場域類型分佈。
+          空氣品質與濕度控制兩張卡於 2026-09-03 移到「設備總覽」,與七分群分布同頁對照。 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
-        {/* 空氣品質(PM2.5) */}
-        <div className="card" {...batchAttrs('A.分群.空品濕度分布')}>
-          <div className="ch">
-            <div>
-              <h3><Icon name="wind" size={14} /> 空氣品質</h3>
-              <div className="csub">PM2.5 · 4 級分布 · 全部 1,284 場域</div>
-            </div>
-            <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>
-              {(AIR_QUALITY_DIST[0].pct + AIR_QUALITY_DIST[1].pct).toFixed(1)}% 達優/良好
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-            {AIR_QUALITY_DIST.map((d) => {
-              const cats = d.catIds.map((id) => CATEGORIES.find((c) => c.id === id)!).filter(Boolean)
-              return (
-                <div key={d.lvl} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{
-                    width: 36, height: 28, borderRadius: 6, background: d.bg,
-                    color: d.color, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0,
-                  }}>{d.lvl}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: 'var(--as-ink-2)' }}>{d.range}</span>
-                      <span className="mono" style={{ fontWeight: 600 }}>
-                        {d.n.toLocaleString()}
-                        <span style={{ color: 'var(--as-mute)', fontWeight: 400, marginLeft: 4 }}>({d.pct}%)</span>
-                      </span>
-                    </div>
-                    <div style={{ height: 6, background: 'var(--as-line-2)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${d.pct}%`, height: '100%', background: d.color, borderRadius: 3 }}></div>
-                    </div>
-                    {cats.length > 0 && (
-                      <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {cats.map((m) => (
-                          <span key={m.id} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 3,
-                            fontSize: 9, padding: '1px 6px', borderRadius: 8,
-                            background: m.bg, color: m.color, fontWeight: 600,
-                          }}>{m.id} {m.code}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* 濕度控制 */}
-        <div className="card" {...batchAttrs('A.分群.空品濕度分布')}>
-          <div className="ch">
-            <div>
-              <h3><Icon name="drop" size={14} /> 濕度控制</h3>
-              <div className="csub">相對濕度 · 4 級分布 · 全部 1,284 場域</div>
-            </div>
-            <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>
-              {HUMIDITY_DIST[1].pct.toFixed(1)}% 處於舒適區
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-            {HUMIDITY_DIST.map((d) => {
-              const cats = d.catIds.map((id) => CATEGORIES.find((c) => c.id === id)!).filter(Boolean)
-              return (
-                <div key={d.lvl} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{
-                    width: 36, height: 28, borderRadius: 6, background: d.bg,
-                    color: d.color, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0,
-                  }}>{d.lvl}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: 'var(--as-ink-2)' }}>{d.range}</span>
-                      <span className="mono" style={{ fontWeight: 600 }}>
-                        {d.n.toLocaleString()}
-                        <span style={{ color: 'var(--as-mute)', fontWeight: 400, marginLeft: 4 }}>({d.pct}%)</span>
-                      </span>
-                    </div>
-                    <div style={{ height: 6, background: 'var(--as-line-2)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${d.pct}%`, height: '100%', background: d.color, borderRadius: 3 }}></div>
-                    </div>
-                    {cats.length > 0 && (
-                      <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {cats.map((m) => (
-                          <span key={m.id} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 3,
-                            fontSize: 9, padding: '1px 6px', borderRadius: 8,
-                            background: m.bg, color: m.color, fontWeight: 600,
-                          }}>{m.id} {m.code}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
         {SEGMENTS_A.map((s, si) => (
           <div className="seg-card" key={s.title}>
             <div className="sg-h">

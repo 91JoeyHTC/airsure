@@ -149,13 +149,14 @@ export const TIER_DOT: Record<TierKey, string> = {
   gold: '#C99A2E', silver: '#9AA7AB', bronze: '#B9793F', risk: 'var(--as-danger)',
 }
 
-/** 六大類型 → 對外揭露等級。④⑤⑥ 是內部風險軸,對外一律以銅級揭露。 */
+/** 七分群 → 對外揭露等級(v2 §3.5)。④⑤⑥ 是內部風險軸,對外一律以銅級揭露;
+ *  ⑦乾燥同樣不直接揭露,但它不是風險,對外以銅級呈現、內部標「乾燥」。 */
 export function tierOfCat(cat: CatId): { key: TierKey; label: string; internal: string } {
   const meta = CATEGORIES.find((c) => c.id === cat)!
-  const key: TierKey = cat === '1' ? 'gold' : cat === '2' ? 'silver' : cat === '3' ? 'bronze' : 'risk'
+  const key: TierKey = cat === '1' ? 'gold' : cat === '2' ? 'silver' : cat === '3' || cat === '7' ? 'bronze' : 'risk'
   return {
     key,
-    label: key === 'risk' ? '銅級空氣' : meta.customer,
+    label: key === 'risk' || cat === '7' ? '銅級空氣' : meta.customer,
     internal: `${meta.id} ${meta.code}`,
   }
 }

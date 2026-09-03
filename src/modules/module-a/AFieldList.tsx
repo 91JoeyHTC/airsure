@@ -56,7 +56,7 @@ function StateLamp({ state }: { state: ReportState }) {
   )
 }
 
-/* 對外分群(金/銀/銅)+ 內部六大類型代號。
+/* 對外分群(金/銀/銅)+ 內部七分群代號。
  * cat 為 null = 這台還沒有設備分析報告,分群與指數都無從得知。 */
 function TierCell({ cat }: { cat: CatId | null }) {
   if (!cat) return <span className="mute" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>待報告產出</span>
@@ -292,7 +292,7 @@ export function AFieldList({
   onClearCatFilter,
 }: {
   onSelect: (fid: string) => void
-  /** 六大類型篩選(由整體層 upsell 卡片點擊帶入) */
+  /** 七分群篩選(由設備總覽的建議聯繫客戶卡片點擊帶入) */
   catFilter?: CatId | null
   onClearCatFilter?: () => void
 }) {

@@ -1,10 +1,10 @@
 /* AirSure — Module A mock data: 居家空氣場域 */
 
-/* ── 六大類型參照表(方案 C 業務端代號為主、方案 A 身分標籤為副) ───────── */
+/* ── 七分群參照表(AirCare v2 分群名稱為主、內部身分標籤為副) ───────────── */
 import { DEVICE_REPORTS, deviceFieldId } from './devices'
 import type { DeviceReport } from './devices'
 
-export type CatId = '1' | '2' | '3' | '4' | '5' | '6'
+export type CatId = '1' | '2' | '3' | '4' | '5' | '6' | '7'
 export type Disposition = 'ok' | 'attention' | 'warning'
 
 export interface CategoryMeta {
@@ -18,14 +18,103 @@ export interface CategoryMeta {
   desc: string        // 一句話定位
 }
 
+/* 七分群 —— 對齊 AirCare v2(docs/aircare-v2-分群與評分機制.md §3.4 P×H 矩陣)。
+ * `code` = v2 分群名稱(與中台引擎回傳的 segment 字串同一套語彙,不另造別名)
+ * `customer` = v2 §5 對外文案;未直接揭露的分群(銅級/風險/乾燥)不對客戶顯示內部分群名。 */
 export const CATEGORIES: CategoryMeta[] = [
-  { id: '1', code: '維持型',     identity: '空氣模範生', customer: '金級空氣',  disposition: 'ok',        color: '#16A34A', bg: '#DCFCE7', desc: 'PM2.5 與濕度雙優 · 健康證書首選' },
-  { id: '2', code: '穩定型',     identity: '健康常客',   customer: '銀級空氣',  disposition: 'ok',        color: '#16A085', bg: '#D1F3EB', desc: '日常穩定 · 重點維護濾網節奏' },
-  { id: '3', code: '待提升型',   identity: '可優化型',   customer: '銅級空氣',  disposition: 'attention', color: '#CA8A04', bg: '#FEF3C7', desc: '單項偏弱 · 可推升級耗材' },
-  { id: '4', code: '除濕型',     identity: '濕氣困擾型', customer: '濕度待調',  disposition: 'attention', color: '#D97706', bg: '#FFEDD5', desc: '濕度偏高 · CS 系列除濕主打族群' },
-  { id: '5', code: '清淨型',     identity: '空污壓力型', customer: '空品待調',  disposition: 'attention', color: '#EA580C', bg: '#FFE4D6', desc: '室內 PM2.5 偏高 · CS 系列清淨主打族群' },
-  { id: '6', code: '雙重介入型', identity: '雙重風險型', customer: '環境待調',  disposition: 'warning',   color: '#DC2626', bg: '#FEE2E2', desc: 'PM2.5 與濕度同步偏弱 · 最高 LTV upsell' },
+  { id: '1', code: '金級空氣',       identity: '空氣模範生', customer: '金級空氣',           disposition: 'ok',        color: '#16A34A', bg: '#DCFCE7', desc: 'P1 × H1 · PM2.5 與濕度雙優 · 健康證書首選' },
+  { id: '2', code: '銀級空氣',       identity: '健康常客',   customer: '銀級空氣',           disposition: 'ok',        color: '#16A085', bg: '#D1F3EB', desc: 'P2×H1 或 P1×H2 · 日常穩定 · 重點維護濾網節奏' },
+  { id: '3', code: '銅級空氣',       identity: '可優化型',   customer: '銅級空氣',           disposition: 'attention', color: '#CA8A04', bg: '#FEF3C7', desc: 'P2 × H2 · 單項偏弱 · 可推升級耗材' },
+  { id: '4', code: '濕度風險',       identity: '濕氣困擾型', customer: '濕度管理待改善',     disposition: 'attention', color: '#D97706', bg: '#FFEDD5', desc: 'H3/H4 且 PM2.5 尚可 · CS 系列除濕主打族群' },
+  { id: '5', code: '清淨風險',       identity: '空污壓力型', customer: '空氣清淨待改善',     disposition: 'attention', color: '#EA580C', bg: '#FFE4D6', desc: 'P3/P4 且濕度尚可 · CS 系列清淨主打族群' },
+  { id: '6', code: '清淨除濕雙風險', identity: '雙重風險型', customer: '空氣與濕度皆待改善', disposition: 'warning',   color: '#DC2626', bg: '#FEE2E2', desc: 'P3/P4 × H3/H4 · 最高 LTV upsell' },
+  /* 乾燥由濕度 ≤45% 優先覆蓋,不再看 PM2.5(v2 §3.1)。disposition 為 ok:
+   * v2 實測乾燥群分數中位 92.7,高於銅級 87.1,標 attention 會與分數矛盾。 */
+  { id: '7', code: '乾燥',           identity: '空氣偏乾型', customer: '空氣偏乾',           disposition: 'ok',        color: '#0EA5E9', bg: '#E0F2FE', desc: 'HH(濕度 ≤45%)優先覆蓋 · 不適用除濕方向 · 搭配加濕建議' },
 ]
+
+/* ── AirCare v2 分群與評分(唯一真相) ──────────────────────────────────
+ * 分群與評分刻意分離(v2 §2):兩者吃同樣的兩個平均值,但規則不同,
+ * 不得由分數反推分群。全站只有這裡定義門檻,其他地方一律呼叫。 */
+
+export type Pm25Level = 'P1' | 'P2' | 'P3' | 'P4'
+export type HumidityLevel = 'HH' | 'H1' | 'H2' | 'H3' | 'H4'
+
+/** v2 §3.2 PM2.5 分群等級 */
+export const PM25_BANDS: { k: Pm25Level; lo: number; hi: number; range: string }[] = [
+  { k: 'P1', lo: 0,  hi: 5,        range: '0–5' },
+  { k: 'P2', lo: 5,  hi: 12,       range: '>5–12' },
+  { k: 'P3', lo: 12, hi: 30,       range: '>12–30' },
+  { k: 'P4', lo: 30, hi: Infinity, range: '>30' },
+]
+
+/** v2 §3.3 濕度分群等級。HH 為優先覆蓋條件,排在最前面。 */
+export const HUMIDITY_BANDS: { k: HumidityLevel; lo: number; hi: number; range: string }[] = [
+  { k: 'HH', lo: 0,  hi: 45,       range: '≤45%' },
+  { k: 'H1', lo: 45, hi: 60,       range: '>45–60%' },
+  { k: 'H2', lo: 60, hi: 65,       range: '>60–65%' },
+  { k: 'H3', lo: 65, hi: 75,       range: '>65–75%' },
+  { k: 'H4', lo: 75, hi: Infinity, range: '>75%' },
+]
+
+export function pm25LevelOf(pm: number): Pm25Level {
+  const x = Math.max(0, pm)
+  return (PM25_BANDS.find((b) => x <= b.hi) ?? PM25_BANDS[3]).k
+}
+
+export function humidityLevelOf(humidity: number): HumidityLevel {
+  const h = Math.min(100, Math.max(0, humidity))
+  return (HUMIDITY_BANDS.find((b) => h <= b.hi) ?? HUMIDITY_BANDS[4]).k
+}
+
+/** v2 §3.4 P×H 分群矩陣。HH 優先覆蓋,不再看 PM2.5。 */
+const PH_MATRIX: Record<Exclude<HumidityLevel, 'HH'>, Record<Pm25Level, CatId>> = {
+  H1: { P1: '1', P2: '2', P3: '5', P4: '5' },
+  H2: { P1: '2', P2: '3', P3: '5', P4: '5' },
+  H3: { P1: '4', P2: '4', P3: '6', P4: '6' },
+  H4: { P1: '4', P2: '4', P3: '6', P4: '6' },
+}
+
+/** 期間平均 PM2.5 + 平均濕度 → 分群。全站唯一的分群判定。 */
+export function segmentOf(pm: number, humidity: number): CatId {
+  const h = humidityLevelOf(humidity)
+  if (h === 'HH') return '7'
+  return PH_MATRIX[h][pm25LevelOf(pm)]
+}
+
+/** v2 §4.1 PM2.5 分數(0–100 連續分段線性,越低越好) */
+export function pm25Score(pm: number): number {
+  const x = Math.max(0, pm)
+  if (x <= 5) return 100 - 2 * x
+  if (x <= 12) return 90 - 3 * (x - 5)
+  if (x <= 15) return 69 - 3 * (x - 12)
+  if (x <= 30) return 60 - 4 * (x - 15)
+  return 0
+}
+
+/** v2 §4.2 濕度分數(0–100 連續分段線性) */
+export function humidityScore(humidity: number): number {
+  const h = Math.min(100, Math.max(0, humidity))
+  if (h <= 35) return 60
+  if (h <= 40) return 60 + (h - 35) * 4
+  if (h <= 45) return 80 + (h - 40) * 4
+  if (h <= 60) return 100
+  if (h <= 65) return 100 - (h - 60) * 6
+  if (h <= 70) return 70 - (h - 65) * 3
+  if (h <= 75) return 55 - (h - 70) * 2
+  return Math.max(0, 45 - (h - 75) * 1.8)
+}
+
+/** 中台/報告回傳的 segment 字串 → 分群 id。報告是分群的權威來源。 */
+const SEGMENT_TO_CAT: Record<string, CatId> = {
+  金級空氣: '1', 銀級空氣: '2', 銅級空氣: '3',
+  濕度風險: '4', 清淨風險: '5', 清淨除濕雙風險: '6', 乾燥: '7',
+}
+
+/** v2 §4 Aircare 指數 = PM2.5 分數 × 0.5 + 濕度分數 × 0.5 */
+export function aircareIndex(pm: number, humidity: number): number {
+  return pm25Score(pm) * 0.5 + humidityScore(humidity) * 0.5
+}
 
 export const DISPOSITION_META: Record<Disposition, { label: string; color: string; bg: string; pill: 'g'|'y'|'r' }> = {
   ok:        { label: 'OK',     color: 'var(--as-success)', bg: '#DCFCE7', pill: 'g' },
@@ -33,20 +122,24 @@ export const DISPOSITION_META: Record<Disposition, { label: string; color: strin
   warning:   { label: '警告處理', color: 'var(--as-danger)',  bg: '#FEE2E2', pill: 'r' },
 }
 
-/* ── 六大類型在 1,284 場域中的分布(對齊使用中場域數) ──────────────────── */
+/* ── 七分群在 1,284 場域中的分布(對齊使用中場域數) ─────────────────────── */
 export interface CategoryDist {
   id: CatId
   n: number
   pct: number   // 佔比 %(已四捨五入到 1 位)
 }
 
+/* 佔比依 AirCare v2 實測母體(2,567 台)等比縮到 1,284 場域。
+ * 與 v1 最大的差異:濕度風險 9.7% → 32.3%,躍升為第二大群 —— 舊 mock 嚴重低估
+ * 除濕族群,而 CS 系列主打就是除濕。 */
 export const CATEGORY_DIST: CategoryDist[] = [
-  { id: '1', n: 412, pct: 32.1 },
-  { id: '2', n: 386, pct: 30.1 },
-  { id: '3', n: 248, pct: 19.3 },
-  { id: '4', n: 124, pct:  9.7 },
-  { id: '5', n:  78, pct:  6.1 },
-  { id: '6', n:  36, pct:  2.8 },
+  { id: '1', n: 435, pct: 33.9 },
+  { id: '2', n: 294, pct: 22.9 },
+  { id: '3', n:  60, pct:  4.7 },
+  { id: '4', n: 415, pct: 32.3 },
+  { id: '5', n:  30, pct:  2.3 },
+  { id: '6', n:  26, pct:  2.0 },
+  { id: '7', n:  24, pct:  1.9 },
 ]
 
 /* 三級處置 rollup(① + ② / ③④⑤ / ⑥) */
@@ -57,10 +150,11 @@ export interface DispositionRollup {
   catIds: CatId[]
 }
 
+/* 乾燥歸 ok:v2 實測乾燥群分數中位 92.7,高於銅級 87.1(見 CATEGORIES id '7' 註解)。 */
 export const DISPOSITION_ROLLUP: DispositionRollup[] = [
-  { key: 'ok',        n: 798, pct: 62.2, catIds: ['1', '2'] },
-  { key: 'attention', n: 450, pct: 35.0, catIds: ['3', '4', '5'] },
-  { key: 'warning',   n:  36, pct:  2.8, catIds: ['6'] },
+  { key: 'ok',        n: 753, pct: 58.6, catIds: ['1', '2', '7'] },
+  { key: 'attention', n: 505, pct: 39.3, catIds: ['3', '4', '5'] },
+  { key: 'warning',   n:  26, pct:  2.0, catIds: ['6'] },
 ]
 
 /* ── KPI ② 今日開機率 ────────────────────────────────────────────────── */
@@ -99,10 +193,12 @@ export interface UpsellSlot {
   ltvHint: string
 }
 
+/* n 為 v2 實測比例下的戶數;實際顯示值由當前 filtered 母體即時算(ModuleA.tsx)。
+ * 乾燥群不列入 —— CS 系列是清淨 + 除濕,沒有加濕產品,v2 只給「加濕建議」。 */
 export const UPSELL_POOL: UpsellSlot[] = [
-  { catId: '4', code: '除濕型',     persona: '濕氣困擾型', n: 124, product: 'CS 系列 · 除濕主打',    pitch: '梅雨季除濕需求 + 黴菌過敏',          ltvHint: '客單 7–9k' },
-  { catId: '5', code: '清淨型',     persona: '空污壓力型', n:  78, product: 'CS 系列 · 清淨主打',    pitch: '空污季 PM2.5 飆高 + 高敏家庭',       ltvHint: '客單 6–8k' },
-  { catId: '6', code: '雙重介入型', persona: '雙重風險型', n:  36, product: 'CS 系列 · 清淨+除濕一體機', pitch: '一機解決兩重困擾 · 主管最在意 LTV', ltvHint: '客單 12–18k' },
+  { catId: '4', code: '濕度風險',       persona: '濕氣困擾型', n: 415, product: 'CS 系列 · 除濕主打',    pitch: '梅雨季除濕需求 + 黴菌過敏',          ltvHint: '客單 7–9k' },
+  { catId: '5', code: '清淨風險',       persona: '空污壓力型', n:  30, product: 'CS 系列 · 清淨主打',    pitch: '空污季 PM2.5 飆高 + 高敏家庭',       ltvHint: '客單 6–8k' },
+  { catId: '6', code: '清淨除濕雙風險', persona: '雙重風險型', n:  26, product: 'CS 系列 · 清淨+除濕一體機', pitch: '一機解決兩重困擾 · 主管最在意 LTV', ltvHint: '客單 12–18k' },
 ]
 
 /* ── 類型流動(Phase 1.5,本月遷移示意) ─────────────────────────────── */
@@ -160,7 +256,7 @@ export interface FieldRecord {
   co2: number
   mem: string
   tier: string
-  cat: CatId           // 六大類型
+  cat: CatId           // 七分群(由 segmentOf(pm, humidity) 決定)
   hrs: number          // 日均開機時數
   minPct: number       // 該場域 6 類耗材的最低殘量 %(用於分群第 1 軸)
   predictedDays: number // 最快需要更換的耗材預估剩餘天數
@@ -187,6 +283,7 @@ const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
   const topMode = [...r.modes].sort((a, b) => b.hours - a.hours)[0]
   const tempAvg = r.daily.reduce((s, d) => s + d.temp, 0) / r.daily.length
   const isOn = runOn > 0 && runOn >= runOff
+  const v2Score = aircareIndex(m.pm25Avg, m.humidityAvg)
   return {
     nm: `${city.replace('臺', '台')}${dist}居家`,
     id: deviceFieldId(m.mac),
@@ -195,13 +292,21 @@ const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
     customerName: m.customerCode,
     addr: m.address.slice(3),
     type: '居家', sz: 0, dev: isOn ? '1/1' : '0/1',
-    lamp: m.airScore >= 75 ? 'g' : m.airScore >= 60 ? 'y' : 'r',
-    q: Math.round(m.airScore),
-    pm: Math.round(r.daily[r.daily.length - 1].avg),
+    /* pm / humidity 是「分析期間平均」—— v2 分群與評分的輸入就是這兩個平均值,
+     * 不是最新一日的讀數。舊版取 daily 最後一天,語意與分群對不上。 */
+    lamp: v2Score >= 75 ? 'g' : v2Score >= 60 ? 'y' : 'r',
+    /* 報告存的 airScore(45–48)是舊 scoring_config 產的:humidityScore 全為 0.0,
+     * 但同一份報告的 humidityAvg 46.8–59.5 依 v2 §4.2 應得 100 分。
+     * v2 §7 明定生效公式以 active 設定為準,所以檯面一律用 v2 重算;
+     * 報告原值保留在 DEVICE_REPORTS.meta,不覆寫。 */
+    q: Math.round(v2Score),
+    pm: Math.round(m.pm25Avg * 10) / 10,
     co2: 0,
     mem: m.customerCode,
     tier: '',
-    cat: (({ 金級空氣: '1', 銀級空氣: '2', 銅級空氣: '3', 濕度風險: '4', 清淨風險: '5', 清淨除濕雙風險: '6' } as Record<string, CatId>)[m.segment]) ?? '1',
+    /* 分群以報告回傳的 segment 為準(報告是權威);三台實測都與
+     * segmentOf(pm25Avg, humidityAvg) 一致,驗證腳本會逐列比對。 */
+    cat: SEGMENT_TO_CAT[m.segment] ?? segmentOf(m.pm25Avg, m.humidityAvg),
     hrs: Math.round(m.runHours / m.days * 10) / 10,
     minPct: worst.remainingPct,
     predictedDays: Math.round(worst.daysLeft),
@@ -221,24 +326,31 @@ export const FIELDS_A_FULL: FieldRecord[] = [
   /* ★ 真實資料列(3 台),由 DEVICE_REPORTS 產生 —— 見本檔後段 fieldDetailFromReport。
    *   其餘 9 列仍為示範資料。 */
   ...DEVICE_ROWS,
-  { nm: '臺北信義居家',   id: 'SH-0021', customerId: 'C202105001', customerName: '陳俊宏',       addr: '信義區松仁路',  type: '居家', sz: 42,  dev: '4/4',  lamp: 'g', q: 92, pm: 12, co2: 642,  mem: '陳俊宏 · 高級',  tier: 'g', cat: '1', hrs: 18.2, minPct: 64, predictedDays:  72,
+  /* pm / humidity 落在各自分群的 P×H 格內,cat 因此可由 segmentOf() 驗證得出;
+     q 一律由 aircareIndex() 算,不手填 —— 手填會與級距、分群三方打架。
+     舊值用的是室外 AQI 量級(pm 8–84),v2 對齊後改為室內實測量級。 */
+  { nm: '臺北信義居家',   id: 'SH-0021', customerId: 'C202105001', customerName: '陳俊宏',       addr: '信義區松仁路',  type: '居家', sz: 42,  dev: '4/4',  lamp: 'g', q: 98, pm:  2.1, co2: 642,  mem: '陳俊宏 · 高級',  tier: 'g', cat: '1', hrs: 18.2, minPct: 64, predictedDays:  72,
     model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 54, temp: 25.8, devTotal:  4, devOnline: 4, urgentParts: 0, alarmDevices: 0 },
-  { nm: '新北板橋辦公',   id: 'SH-1147', customerId: 'C202003042', customerName: '李文君',       addr: '板橋區文化路',  type: '辦公', sz: 88,  dev: '8/9',  lamp: 'y', q: 76, pm: 32, co2: 894,  mem: '李文君',         tier: '',  cat: '3', hrs: 10.4, minPct: 28, predictedDays:  18,
+  { nm: '新北板橋辦公',   id: 'SH-1147', customerId: 'C202003042', customerName: '李文君',       addr: '板橋區文化路',  type: '辦公', sz: 88,  dev: '8/9',  lamp: 'g', q: 84, pm:  8.4, co2: 894,  mem: '李文君',         tier: '',  cat: '3', hrs: 10.4, minPct: 28, predictedDays:  18,
     model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 62, temp: 26.4, devTotal:  9, devOnline: 8, urgentParts: 1, alarmDevices: 1 },
-  { nm: '臺中科技園區',   id: 'SH-2841', customerId: 'C201000272', customerName: '王婉真',       addr: '西屯區工業區',  type: '辦公', sz: 185, dev: '6/10', lamp: 'r', q: 48, pm: 84, co2: 1240, mem: '王婉真 · 高級',  tier: 'g', cat: '6', hrs:  6.1, minPct: 11, predictedDays:   6,
+  { nm: '臺中科技園區',   id: 'SH-2841', customerId: 'C201000272', customerName: '王婉真',       addr: '西屯區工業區',  type: '辦公', sz: 185, dev: '6/10', lamp: 'r', q: 24, pm: 34.2, co2: 1240, mem: '王婉真 · 高級',  tier: 'g', cat: '6', hrs:  6.1, minPct: 11, predictedDays:   6,
     model: 'CS500', power: '開機', mode: '手動風量', humidity: 74, temp: 28.9, devTotal: 10, devOnline: 6, urgentParts: 3, alarmDevices: 2 },
-  { nm: '高雄前鎮辦公',   id: 'SH-3052', customerId: 'C202206018', customerName: '張志成',       addr: '前鎮區成功二路', type: '辦公', sz: 64,  dev: '5/5',  lamp: 'g', q: 88, pm: 18, co2: 720,  mem: '張志成',         tier: '',  cat: '2', hrs: 14.6, minPct: 52, predictedDays:  48,
+  { nm: '高雄前鎮辦公',   id: 'SH-3052', customerId: 'C202206018', customerName: '張志成',       addr: '前鎮區成功二路', type: '辦公', sz: 64,  dev: '5/5',  lamp: 'g', q: 92, pm:  6.8, co2: 720,  mem: '張志成',         tier: '',  cat: '2', hrs: 14.6, minPct: 52, predictedDays:  48,
     model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 57, temp: 27.2, devTotal:  5, devOnline: 5, urgentParts: 0, alarmDevices: 0 },
-  { nm: '桃園藝文居家',   id: 'SH-4119', customerId: 'C201912033', customerName: '黃慧君',       addr: '桃園區慈文路',  type: '居家', sz: 38,  dev: '3/3',  lamp: 'g', q: 95, pm:  8, co2: 580,  mem: '黃慧君 · 高級',  tier: 'g', cat: '1', hrs: 20.8, minPct: 71, predictedDays:  88,
+  { nm: '桃園藝文居家',   id: 'SH-4119', customerId: 'C201912033', customerName: '黃慧君',       addr: '桃園區慈文路',  type: '居家', sz: 38,  dev: '3/3',  lamp: 'g', q: 99, pm:  1.2, co2: 580,  mem: '黃慧君 · 高級',  tier: 'g', cat: '1', hrs: 20.8, minPct: 71, predictedDays:  88,
     model: 'CS500', power: '開機', mode: '雙智慧',   humidity: 52, temp: 25.1, devTotal:  3, devOnline: 3, urgentParts: 0, alarmDevices: 0 },
-  { nm: '臺南安平診所',   id: 'SH-5023', customerId: 'C202109054', customerName: '安平診所',     addr: '安平區永華路',  type: '醫療', sz: 96,  dev: '7/8',  lamp: 'y', q: 71, pm: 38, co2: 920,  mem: '林醫師',         tier: '',  cat: '5', hrs:  9.2, minPct: 22, predictedDays:  14,
+  { nm: '臺南安平診所',   id: 'SH-5023', customerId: 'C202109054', customerName: '安平診所',     addr: '安平區永華路',  type: '醫療', sz: 96,  dev: '7/8',  lamp: 'y', q: 68, pm: 19.6, co2: 920,  mem: '林醫師',         tier: '',  cat: '5', hrs:  9.2, minPct: 22, predictedDays:  14,
     model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 61, temp: 26.8, devTotal:  8, devOnline: 7, urgentParts: 1, alarmDevices: 1 },
-  { nm: '新竹東區居家',   id: 'SH-5208', customerId: 'C202304076', customerName: '吳承翰',       addr: '東區光復路',    type: '居家', sz: 52,  dev: '4/4',  lamp: 'g', q: 90, pm: 14, co2: 620,  mem: '吳承翰 · 高級',  tier: 'g', cat: '2', hrs: 16.5, minPct: 58, predictedDays:  56,
+  { nm: '新竹東區居家',   id: 'SH-5208', customerId: 'C202304076', customerName: '吳承翰',       addr: '東區光復路',    type: '居家', sz: 52,  dev: '4/4',  lamp: 'g', q: 92, pm:  7.3, co2: 620,  mem: '吳承翰 · 高級',  tier: 'g', cat: '2', hrs: 16.5, minPct: 58, predictedDays:  56,
     model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 55, temp: 25.6, devTotal:  4, devOnline: 4, urgentParts: 0, alarmDevices: 0 },
-  { nm: '臺北大安咖啡店', id: 'SH-5611', customerId: 'C202008123', customerName: '阿諾義式咖啡', addr: '大安區忠孝東路', type: '商業', sz: 28,  dev: '2/3',  lamp: 'y', q: 68, pm: 42, co2: 1080, mem: '阿諾義式',       tier: '',  cat: '4', hrs: 11.8, minPct: 18, predictedDays:   9,
+  { nm: '臺北大安咖啡店', id: 'SH-5611', customerId: 'C202008123', customerName: '阿諾義式咖啡', addr: '大安區忠孝東路', type: '商業', sz: 28,  dev: '2/3',  lamp: 'y', q: 74, pm:  5.9, co2: 1080, mem: '阿諾義式',       tier: '',  cat: '4', hrs: 11.8, minPct: 18, predictedDays:   9,
     model: 'CS101', power: '開機', mode: '除濕智慧', humidity: 68, temp: 27.9, devTotal:  3, devOnline: 2, urgentParts: 1, alarmDevices: 1 },
-  { nm: '宜蘭礁溪民宿',   id: 'SH-6022', customerId: 'C202105099', customerName: '陶然居民宿',   addr: '礁溪鄉德陽路',  type: '商業', sz: 76,  dev: '4/4',  lamp: 'g', q: 86, pm: 22, co2: 690,  mem: '陶然居',         tier: '',  cat: '2', hrs: 13.4, minPct: 46, predictedDays:  32,
+  { nm: '宜蘭礁溪民宿',   id: 'SH-6022', customerId: 'C202105099', customerName: '陶然居民宿',   addr: '礁溪鄉德陽路',  type: '商業', sz: 76,  dev: '4/4',  lamp: 'g', q: 92, pm:  7.1, co2: 690,  mem: '陶然居',         tier: '',  cat: '2', hrs: 13.4, minPct: 46, predictedDays:  32,
     model: 'CS201', power: '開機', mode: '睡眠',     humidity: 59, temp: 26.2, devTotal:  4, devOnline: 4, urgentParts: 0, alarmDevices: 0 },
+  /* 第 7 群「乾燥」的示範場域(2026-09-03 新增)。沒有這一列,乾燥群在場域清單與
+     詳情頁完全看不到,只會是分布卡上的一個數字。 */
+  { nm: '臺中西屯居家',   id: 'SH-6540', customerId: 'C202207041', customerName: '林佩璇',       addr: '西屯區台灣大道', type: '居家', sz: 44,  dev: '3/3',  lamp: 'g', q: 90, pm:  1.8, co2: 610,  mem: '林佩璇',         tier: '',  cat: '7', hrs: 15.2, minPct: 61, predictedDays:  63,
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 41, temp: 24.6, devTotal:  3, devOnline: 3, urgentParts: 0, alarmDevices: 0 },
 ]
 
 /* 當區室外 PM2.5(Phase 2 待接,先示意) */
@@ -252,6 +364,7 @@ export const FIELD_OUTDOOR_PM25: Record<string, number> = {
   'SH-5208': 24,
   'SH-5611': 38,
   'SH-6022': 19,
+  'SH-6540': 21,
 }
 
 export const FIELD_DELTAS: Record<string, number> = {
@@ -264,6 +377,7 @@ export const FIELD_DELTAS: Record<string, number> = {
   'SH-5208': 0,
   'SH-5611': -7,
   'SH-6022': 4,
+  'SH-6540': 2,
 }
 
 export interface RegionHealth {
@@ -305,40 +419,48 @@ export const DHI_DIST: DHILevel[] = [
   { lv: 'D', range: '< 50', n: 323, pct: 2.6, c: 'var(--as-danger)' },
 ]
 
-/* ── 空氣品質(PM2.5) 4 級分布 ─────────────────────────────────── */
+/* ── 空氣品質(PM2.5)報告級距 ────────────────────────────────────
+ * v2 §4.1 末段的報告級距:極淨 0–5 / 優良 6–12 / 尚可 13–15 / 待改善 16–29 / 不健康 ≥30。
+ * 與分群等級 P1–P4 共用同一份工作簿級距,但不是同一套規則(v2 §2)。
+ * 舊版用 15/25/50 的室外 AQI 門檻,把三台真實設備(90 天平均 1.4 / 2.5 / 3.6 µg/m³)
+ * 全部塞進同一格 —— 這裡改為室內實測門檻。
+ * n / pct 不再寫死:筆數一律由當前母體即時算(見 module-a-overview.ts)。 */
 export interface AirQualityTier {
   lvl: string
   range: string
-  n: number
-  pct: number
+  lo: number
+  hi: number
   color: string
   bg: string
-  catIds: CatId[]   // 對應的六大類型
 }
 
 export const AIR_QUALITY_DIST: AirQualityTier[] = [
-  { lvl: '優',   range: 'PM2.5 < 15 µg/m³',  n: 412, pct: 32.1, color: 'var(--as-success)', bg: '#DCFCE7', catIds: ['1'] },
-  { lvl: '良好', range: 'PM2.5 15–25 µg/m³', n: 510, pct: 39.7, color: '#16A085',           bg: '#D1F3EB', catIds: ['2', '4'] },
-  { lvl: '普通', range: 'PM2.5 25–50 µg/m³', n: 248, pct: 19.3, color: 'var(--as-warning)', bg: '#FEF3C7', catIds: ['3'] },
-  { lvl: '不佳', range: 'PM2.5 ≥ 50 µg/m³',  n: 114, pct:  8.9, color: 'var(--as-danger)',  bg: '#FEE2E2', catIds: ['5', '6'] },
+  { lvl: '極淨',   range: 'PM2.5 0–5 µg/m³',   lo: 0,  hi: 5,        color: 'var(--as-success)', bg: '#DCFCE7' },
+  { lvl: '優良',   range: 'PM2.5 >5–12 µg/m³', lo: 5,  hi: 12,       color: '#16A085',           bg: '#D1F3EB' },
+  { lvl: '尚可',   range: 'PM2.5 >12–15 µg/m³', lo: 12, hi: 15,      color: '#0EA5E9',           bg: '#E0F2FE' },
+  { lvl: '待改善', range: 'PM2.5 >15–30 µg/m³', lo: 15, hi: 30,      color: 'var(--as-warning)', bg: '#FEF3C7' },
+  { lvl: '不健康', range: 'PM2.5 ≥ 30 µg/m³',  lo: 30, hi: Infinity, color: 'var(--as-danger)',  bg: '#FEE2E2' },
 ]
 
-/* ── 濕度控制 4 級分布 ─────────────────────────────────────────── */
+/* ── 濕度控制級距 ───────────────────────────────────────────────
+ * 一列對一個 v2 分群等級(HH/H1/H2/H3/H4),點哪一列都能對回 P×H 矩陣的一整排。
+ * 舊版 4 級(40/60/75)與分群等級對不齊,「過乾」那列的 catIds 甚至是空陣列。 */
 export interface HumidityTier {
   lvl: string
+  band: HumidityLevel
   range: string
-  n: number
-  pct: number
+  lo: number
+  hi: number
   color: string
   bg: string
-  catIds: CatId[]
 }
 
 export const HUMIDITY_DIST: HumidityTier[] = [
-  { lvl: '過乾', range: '濕度 < 40%',    n:  18, pct:  1.4, color: '#0EA5E9',           bg: '#E0F2FE', catIds: [] },
-  { lvl: '舒適', range: '濕度 40–60%',   n: 798, pct: 62.2, color: 'var(--as-success)', bg: '#DCFCE7', catIds: ['1', '2'] },
-  { lvl: '偏濕', range: '濕度 60–75%',   n: 308, pct: 24.0, color: 'var(--as-warning)', bg: '#FEF3C7', catIds: ['3', '5'] },
-  { lvl: '過濕', range: '濕度 ≥ 75%',    n: 160, pct: 12.4, color: 'var(--as-danger)',  bg: '#FEE2E2', catIds: ['4', '6'] },
+  { lvl: '過乾',   band: 'HH', range: '濕度 ≤ 45%',    lo: 0,  hi: 45,       color: '#0EA5E9',           bg: '#E0F2FE' },
+  { lvl: '舒適',   band: 'H1', range: '濕度 >45–60%',  lo: 45, hi: 60,       color: 'var(--as-success)', bg: '#DCFCE7' },
+  { lvl: '略偏濕', band: 'H2', range: '濕度 >60–65%',  lo: 60, hi: 65,       color: '#16A085',           bg: '#D1F3EB' },
+  { lvl: '偏濕',   band: 'H3', range: '濕度 >65–75%',  lo: 65, hi: 75,       color: 'var(--as-warning)', bg: '#FEF3C7' },
+  { lvl: '過濕',   band: 'H4', range: '濕度 > 75%',    lo: 75, hi: Infinity, color: 'var(--as-danger)',  bg: '#FEE2E2' },
 ]
 
 export interface SiteType {
@@ -360,7 +482,8 @@ export const SITE_TYPES: SiteType[] = [
  *
  * 生成規則:固定 seed 的 mulberry32,重整頁面數字不變;分布刻意對齊既有 mock,
  * 不是隨便灑點:
- *   - 六大類型筆數 = CATEGORY_DIST(412/386/248/124/78/36)
+ *   - 七分群筆數   = CATEGORY_DIST(435/294/60/415/30/26/24),且每列都能通過
+ *                    segmentOf(pm, humidity) === cat 的反向驗證
  *   - 區域筆數     = REGION_HEALTH.n
  *   - 場域類型筆數 = SITE_TYPES.n
  *   - Σ devTotal   = TODAY_POWER_ON.total  (4,832)
@@ -384,13 +507,36 @@ function mulberry32(a: number): () => number {
   }
 }
 
-const POP_BAND: Record<CatId, { pm: [number, number]; hum: [number, number]; temp: [number, number]; q: [number, number] }> = {
-  '1': { pm: [0.4, 1.2],  hum: [49, 61], temp: [24.0, 28.0], q: [88, 96] },
-  '2': { pm: [0.65, 1.7], hum: [51, 63], temp: [24.5, 28.5], q: [82, 90] },
-  '3': { pm: [1.1, 2.5],  hum: [55, 67], temp: [24.5, 29.0], q: [70, 80] },
-  '4': { pm: [0.85, 2.0], hum: [65, 79], temp: [25.0, 29.5], q: [64, 74] },
-  '5': { pm: [2.4, 4.9],  hum: [47, 63], temp: [25.0, 30.0], q: [60, 70] },
-  '6': { pm: [4.1, 8.3],  hum: [67, 81], temp: [25.5, 30.5], q: [46, 56] },
+/* 每個分群允許落在哪些 P×H 格(v2 §3.4 矩陣的反解)。
+ * 先抽分群、再從該分群的格子裡抽 pm / 濕度 —— 這樣分布筆數精確等於 CATEGORY_DIST,
+ * 而且每一列都能通過 segmentOf(pm, humidity) === cat 的反向驗證。
+ * 反過來做(先抽數值再看落在哪群)沒辦法命中指定比例。 */
+const SEGMENT_CELLS: Record<CatId, { p: Pm25Level; h: HumidityLevel; w: number }[]> = {
+  '1': [{ p: 'P1', h: 'H1', w: 1 }],
+  '2': [{ p: 'P2', h: 'H1', w: 0.4 }, { p: 'P1', h: 'H2', w: 0.6 }],
+  '3': [{ p: 'P2', h: 'H2', w: 1 }],
+  '4': [{ p: 'P1', h: 'H3', w: 0.58 }, { p: 'P2', h: 'H3', w: 0.12 }, { p: 'P1', h: 'H4', w: 0.24 }, { p: 'P2', h: 'H4', w: 0.06 }],
+  '5': [{ p: 'P3', h: 'H1', w: 0.6 }, { p: 'P4', h: 'H1', w: 0.1 }, { p: 'P3', h: 'H2', w: 0.25 }, { p: 'P4', h: 'H2', w: 0.05 }],
+  '6': [{ p: 'P3', h: 'H3', w: 0.45 }, { p: 'P4', h: 'H3', w: 0.2 }, { p: 'P3', h: 'H4', w: 0.25 }, { p: 'P4', h: 'H4', w: 0.1 }],
+  /* 乾燥由 HH 優先覆蓋,PM2.5 等級不影響分群結果 */
+  '7': [{ p: 'P1', h: 'HH', w: 0.8 }, { p: 'P2', h: 'HH', w: 0.2 }],
+}
+
+/* 在等級內取值。刻意避開級距端點(±0.2),免得四捨五入後跨格,
+ * 讓 segmentOf() 反算出跟指定分群不同的答案。
+ * PM2.5 用 r^exp 壓向低端 —— 真實室內讀數就是這個形狀(三台真實設備 1.4 / 2.5 / 3.6)。 */
+const PM_SAMPLE: Record<Pm25Level, (r: number) => number> = {
+  P1: (r) => 0.4 + Math.pow(r, 1.7) * 4.4,
+  P2: (r) => 5.15 + Math.pow(r, 2.2) * 6.7,
+  P3: (r) => 12.2 + Math.pow(r, 1.6) * 17.5,
+  P4: (r) => 30.4 + r * 24,
+}
+const HUM_SAMPLE: Record<HumidityLevel, (r: number) => number> = {
+  HH: (r) => 33 + r * 11.7,
+  H1: (r) => 45.2 + r * 14.6,
+  H2: (r) => 60.15 + r * 4.7,
+  H3: (r) => 65.2 + r * 9.6,
+  H4: (r) => 75.2 + r * 13,
 }
 
 const MODEL_WEIGHT: [DeviceModel, number][] = [['CS101', 0.42], ['CS201', 0.26], ['CS301', 0.18], ['CS500', 0.11], ['未登錄', 0.03]]
@@ -463,24 +609,23 @@ function buildPopulation(): FieldRecord[] {
 
   const rows: FieldRecord[] = cats.map((cat, i) => {
     const rnd = mulberry32(0x5EED + i * 2654435761)
-    const b = POP_BAND[cat]
-    const span = (x: [number, number]) => x[0] + rnd() * (x[1] - x[0])
     const r1 = (v: number) => Math.round(v * 10) / 10
     const weighted = <T>(w: [T, number][]) => { const r = rnd(); let a = 0; for (const [v, p] of w) { a += p; if (r < a) return v } return w[w.length - 1][0] }
 
     const region = regions[i], type = types[i]
     const dz = REGION_DISTRICTS[region]
     const dist = dz[Math.floor(rnd() * dz.length)]
-    /* 少數場域有明顯 PM2.5 事件 —— 沒有這條尾巴,PM2.5 區間篩選會全塞在同一格 */
-    const spike = rnd()
-    const pm = r1(span(b.pm) * (spike < 0.035 ? 5 + rnd() * 6 : 1))
-    const dry = rnd()   // 過乾場域,對齊 HUMIDITY_DIST 的 1.4%
-    const humidity = r1(dry < 0.014 ? 33 + rnd() * 7 : span(b.hum))
+    /* 從該分群允許的 P×H 格裡抽值,分群因此不是另外貼上去的標籤,而是數值算出來的 */
+    const cell = weighted(SEGMENT_CELLS[cat].map((c) => [c, c.w] as [typeof c, number]))
+    const pm = r1(PM_SAMPLE[cell.p](rnd()))
+    const humidity = r1(HUM_SAMPLE[cell.h](rnd()))
+    /* 分數一律走 v2 §4 公式,不另外抽 —— 抽出來的分數會跟自己的 pm / 濕度打架 */
+    const q = Math.round(aircareIndex(pm, humidity))
     const devTotal = 1 + Math.floor(rnd() * 6)     // 之後由 popReconcile 收斂到 Σ = 4,832
     const roll = rnd()
     const power: PowerState = roll < 0.035 ? '離線' : roll < 0.08 ? '關機' : '開機'
-    const q = Math.round(span(b.q))
-    const minPct = Math.round(cat === '6' ? 6 + rnd() * 20 : cat === '4' || cat === '5' ? 15 + rnd() * 28 : 30 + rnd() * 55)
+    /* 耗材殘量與空氣分群無關(耗材看使用量,不看空品),所以不按 cat 分佈 */
+    const minPct = Math.round(15 + rnd() * 80)
     const seq = String(i + 1).padStart(4, '0')
     return {
       nm: `${REGION_PREFIX[region]}${dist}${type}`,
@@ -505,7 +650,7 @@ function buildPopulation(): FieldRecord[] {
       power,
       mode: weighted(MODE_WEIGHT),
       humidity,
-      temp: r1(span(b.temp)),
+      temp: r1(23.6 + rnd() * 6.0),
       devTotal,
       devOnline: power === '開機' ? devTotal : 0,
       urgentParts: 0,
@@ -552,7 +697,9 @@ export function regionOfName(nm: string): string {
 export const FIELDS_A_POP: FieldRecord[] = [...FIELDS_A_FULL, ...buildPopulation()]
 
 export const MONTHS_12 = ['06', '07', '08', '09', '10', '11', '12', '01', '02', '03', '04', '05']
-export const AHI_TREND = [76.4, 77.2, 77.8, 78.4, 79.1, 80.2, 79.6, 80.4, 80.8, 81.2, 81.0, 81.4]
+/* 12 個月的平均 AirCare 分數趨勢。末值須貼近母體現值(v2 公式下 ≈ 85),
+ * 否則字卡寫 85、旁邊的 sparkline 收在 81,同一張卡自打嘴巴。 */
+export const AHI_TREND = [80.1, 80.8, 81.4, 82.0, 82.7, 83.7, 83.2, 83.9, 84.3, 84.7, 84.6, 85.0]
 export const SITE_TREND = [1142, 1156, 1172, 1188, 1204, 1218, 1232, 1244, 1258, 1268, 1276, 1284]
 
 export interface SegmentGroup {
@@ -917,17 +1064,19 @@ export const FIELD_DETAIL_WANG: FieldDetail = {
   homeStyle: '工業區辦公空間 · 鄰主幹道',
   members: '員工 12 位(其中 3 位高敏)',
   acquisition: '同業介紹 · 2020 同步引入',
-  dhi: 48,
+  dhi: 24,
   dhiDelta: -12,
   cat: '6',
   /* 總分刻意等於 dhi(48),避免詳情頁與場域清單/整體層出現兩個不同的分數。
    * 組成:PM2.5 62.0 × 50% + 濕度 34.0 × 50% = 48.0 → 濕度是被拉低的主因。 */
+  /* 對齊清單列 SH-2841(期間平均 pm 34.2 / 濕度 74)與 v2 §4 公式:
+   * pm25Score(34.2)=0、humidityScore(74)=47 → total 23.5 */
   airScore: {
-    total: 48.0,
-    pm25Score: 62.0,
-    humidityScore: 34.0,
-    pm25Avg: 22.4,
-    humidityAvg: 78.0,
+    total: 23.5,
+    pm25Score: 0.0,
+    humidityScore: 47.0,
+    pm25Avg: 34.2,
+    humidityAvg: 74.0,
     humidityP90: 84.0,
     humidityOver65Pct: 91.4,
     outdoorPm25Avg: 68.2,
@@ -1017,11 +1166,7 @@ const PART_META: Record<string, { k: string; sub: string; clr: string }> = {
   電漿模組:  { k: 'plasma', sub: 'Plasma',          clr: '#D97706' },
 }
 
-/** 報告的分群落點 → 六大類型 id */
-const SEGMENT_TO_CAT: Record<string, CatId> = {
-  金級空氣: '1', 銀級空氣: '2', 銅級空氣: '3',
-  濕度風險: '4', 清淨風險: '5', 清淨除濕雙風險: '6',
-}
+/** 報告的分群落點 → 七分群 id */
 
 function fieldDetailFromReport(r: DeviceReport): FieldDetail {
   const m = r.meta
@@ -1047,11 +1192,15 @@ function fieldDetailFromReport(r: DeviceReport): FieldDetail {
     spaceType: '居家',
     floorSize: 0, homeStyle: '', members: '',
     acquisition: '',
-    dhi: Math.round(m.airScore),
+    dhi: Math.round(aircareIndex(m.pm25Avg, m.humidityAvg)),
     dhiDelta: 0,                                  // 首份報告,無上期可比
     cat: SEGMENT_TO_CAT[m.segment] ?? '1',
+    /* 與清單／設備總覽同源:一律 v2 重算。報告原值(m.airScore / m.humidityScore)
+     * 留在 DEVICE_REPORTS 不動,需要對照舊版計分時仍查得到。 */
     airScore: {
-      total: m.airScore, pm25Score: m.pm25Score, humidityScore: m.humidityScore,
+      total: Math.round(aircareIndex(m.pm25Avg, m.humidityAvg) * 10) / 10,
+      pm25Score: Math.round(pm25Score(m.pm25Avg) * 10) / 10,
+      humidityScore: Math.round(humidityScore(m.humidityAvg) * 10) / 10,
       pm25Avg: m.pm25Avg, humidityAvg: m.humidityAvg, humidityP90: m.humidityP90,
       humidityOver65Pct: m.humidityOver65Pct,
       outdoorPm25Avg: m.outdoorPm25Avg, outdoorStation: m.outdoorStation,

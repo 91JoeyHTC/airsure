@@ -25,9 +25,9 @@ export interface BatchTag {
 
 /**
  * key 慣例：'<Module>.<Tab>.<卡片名>'
- * 例：'A.整體.六大類型分布' / 'Dashboard.KPI'
+ * 例：'A.設備總覽.七分群分布' / 'Dashboard.KPI'
  *
- * 元件端用 BATCH_MAP['A.整體.六大類型分布'] 查；
+ * 元件端用 BATCH_MAP['A.設備總覽.七分群分布'] 查；
  * 為了 .tsx 簡潔，也可直接寫 data-batch="p1" data-source="#6"。
  */
 export const BATCH_MAP: Record<string, BatchTag> = {
@@ -46,11 +46,13 @@ export const BATCH_MAP: Record<string, BatchTag> = {
 
   // ─── Module A 居家空氣場域 ───
   'A.KPI': { batch: 'p1', source: '#6 IoT', note: '接 IoT' },
-  'A.整體.六大類型分布': { batch: 'p1', source: '#6 IoT + 六型分類', note: '接 IoT + 套分類規則' },
-  'A.整體.類型流動月遷移': { batch: 'p1', source: '#6 IoT + 六型分類', note: '接 IoT + 套分類規則' },
-  'A.整體.區域熱圖': { batch: 'p1', source: '#6 IoT', note: '接 IoT' },
-  'A.整體.場域明細表': { batch: 'p1', source: '#6 IoT + #1 SF', note: '接 IoT + SF' },
-  'A.分群.空品濕度分布': { batch: 'p1', source: '#6 IoT', note: '接 IoT' },
+  'A.設備總覽.篩選列': { batch: 'p1', source: '#6 IoT', note: '機型/電源/使用模式需 IoT 裝置屬性' },
+  'A.設備總覽.母體來源': { batch: 'p1', source: '#6 IoT + #1 SF', note: '接 IoT + SF' },
+  'A.設備總覽.空品濕度分布': { batch: 'p1', source: '#6 IoT', note: '接 IoT + 套 v2 級距' },
+  'A.設備總覽.七分群分布': { batch: 'p1', source: '#6 IoT + v2 P×H 分群', note: '接 IoT + 套 v2 分群規則' },
+  'A.設備總覽.類型流動月遷移': { batch: 'p1', source: '#6 IoT + v2 P×H 分群', note: '需每週分群快照' },
+  'A.設備總覽.區域熱圖': { batch: 'p1', source: '#6 IoT', note: '接 IoT' },
+  'A.設備總覽.場域明細表': { batch: 'p1', source: '#6 IoT + #1 SF', note: '接 IoT + SF' },
   'A.場域清單.報告產製': { batch: 'p2', source: '#6 IoT + #1 SF + 報告引擎', note: '九態/輪廓/寄發需報告產出引擎回填' },
   'A.個人.場域詳情': { batch: 'p2', source: '#6 IoT + #3 ERP', note: '耗材/水箱需 ERP，延後' },
   'A.個人.耗材庫存': { batch: 'p2', source: '#3 ERP', note: 'ERP 進銷存待確認' },
