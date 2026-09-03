@@ -112,6 +112,13 @@
   border: 1px solid var(--as-line); font-size: 12px; font-family: inherit;
   background: #fff; min-width: 200px;
 }
+/* 篩選下拉(設備總覽的六個條件)—— 與 input.search 同一組視覺 */
+.fb .fsel {
+  height: 30px; padding: 0 8px; border-radius: 6px;
+  border: 1px solid var(--as-line); font-size: 12px; font-family: inherit;
+  background: #fff; color: var(--as-ink); cursor: pointer;
+}
+.fb .fsel:focus { outline: 2px solid var(--as-primary-tint); border-color: var(--as-primary); }
 
 /* Two-col with detail */
 .two-col {

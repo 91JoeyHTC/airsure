@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMemberByCode } from '../../hooks/useMember360'
 import { PageShell } from '../../components/layout/PageShell'
@@ -7,13 +7,14 @@ import { Sparkline } from '../../components/charts/Sparkline'
 import { batchAttrs } from '../../components/ui/BatchAttrs'
 import {
   FIELDS_A_FULL,
+  FIELDS_A_POP,
+  REAL_FIELD_IDS,
   FIELD_DELTAS,
   REGION_HEALTH,
   SITE_TYPES,
   AIR_QUALITY_DIST,
   HUMIDITY_DIST,
   AHI_TREND,
-  SITE_TREND,
   SEGMENTS_A,
   CATEGORIES,
   CATEGORY_DIST,
@@ -30,10 +31,24 @@ import {
   getFieldDetail,
   reportGateOf,
   type CatId,
+  type Disposition,
   type FieldRecord,
   type FieldDetail,
   type FieldConsumable,
 } from '../../mocks/module-a'
+import {
+  ALL,
+  DEFAULT_FILTERS,
+  FILTER_OPTIONS,
+  PM_BUCKETS,
+  HUMIDITY_BUCKETS,
+  TIME_RANGES,
+  filterFields,
+  computeOverviewKpi,
+  metricsFor,
+  activeFilterCount,
+  type OverviewFilters,
+} from '../../mocks/module-a-overview'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
 import type { DeviceReport } from '../../mocks/devices'
 import { AFieldList } from './AFieldList'
@@ -51,8 +66,64 @@ const STATUS_LABEL: Record<FieldConsumable['status'], { lbl: string; clr: string
   ok:       { lbl: '更換備料', clr: 'var(--as-mute)',    bg: '#F3F4F6' },
 }
 
-/* ── 整體層 ─────────────────────────────────────────── */
+/* ── 設備總覽(第一層) ───────────────────────────────── */
 type HeatDim = 'health' | 'type' | 'gap'
+
+/** 明細表每頁列數。母體 1,284 筆,一次全渲染會卡,所以分頁是真的。 */
+const OVERVIEW_PAGE_SIZE = 20
+
+/** 分頁按鈕:頭尾各留一顆、當前頁前後各一顆,其餘以 -1 代表省略號。
+ *  1,284 筆 / 20 = 65 頁,全列出來會把 dt-foot 撐爆。 */
+function pageWindow(current: number, count: number): number[] {
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i)
+  const keep = new Set([0, count - 1, current - 1, current, current + 1])
+  const out: number[] = []
+  for (let i = 0; i < count; i++) {
+    if (keep.has(i) && i >= 0) { out.push(i); continue }
+    if (out[out.length - 1] !== -1) out.push(-1)
+  }
+  return out
+}
+
+/* 篩選列的下拉。六個條件共用同一個外觀,避免各寫各的樣式。 */
+function OvFilter({ label, value, options, onChange }: {
+  label: string
+  value: string
+  options: { k: string; label: string }[]
+  onChange: (v: string) => void
+}) {
+  return (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--as-mute)', whiteSpace: 'nowrap' }}>
+      {label}
+      <select className="fsel" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => <option key={o.k} value={o.k}>{o.label}</option>)}
+      </select>
+    </label>
+  )
+}
+
+/* KPI 字卡。七張同一個形狀,值一律由 computeOverviewKpi 算好才傳進來 —— 元件不做計算。 */
+function OvKpi({ tone, lbl, val, unit, foot, footTone = '', spark, sparkColor }: {
+  tone: 'green' | 'purple' | 'orange' | 'red'
+  lbl: string
+  val: string
+  unit: string
+  foot: string
+  footTone?: '' | 'up' | 'dn'
+  spark?: number[]
+  sparkColor?: string
+}) {
+  return (
+    <div className={`kpi ${tone}`}>
+      <div className="lbl">{lbl}</div>
+      <div className="val">{val}<span className="u">{unit}</span></div>
+      <div className="ft">
+        <span className={`delta ${footTone}`}>{foot}</span>
+        {spark && <Sparkline data={spark} color={sparkColor} />}
+      </div>
+    </div>
+  )
+}
 
 function AOverview({
   onOpenDetail,
@@ -63,30 +134,41 @@ function AOverview({
   onJumpListByCategory: (catId: CatId) => void
 }) {
   const [heatDim, setHeatDim] = useState<HeatDim>('health')
-  // 選中的區域(由區域熱圖點擊帶入,連動下方場域明細表)
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(null)
+  /* 六個篩選 + 區域。KPI 字卡、Top5 / 需關注、明細表全部吃同一份 filtered 母體 ——
+   * 分開算會讓字卡與表在同一個篩選下報出不同數字。判定在 mocks/module-a-overview.ts。 */
+  const [filters, setFilters] = useState<OverviewFilters>(DEFAULT_FILTERS)
+  const [page, setPage] = useState(0)
+  const setFilter = <K extends keyof OverviewFilters>(k: K, v: OverviewFilters[K]) => {
+    setFilters((prev) => ({ ...prev, [k]: v }))
+    setPage(0)
+  }
+  const selectedRegion = filters.region
 
   const catMeta = (id: CatId) => CATEGORIES.find((c) => c.id === id)!
-  const okRow = DISPOSITION_ROLLUP.find((d) => d.key === 'ok')!
-  const attnRow = DISPOSITION_ROLLUP.find((d) => d.key === 'attention')!
-  const warnRow = DISPOSITION_ROLLUP.find((d) => d.key === 'warning')!
 
-  // 依場域 nm 推斷區域,對應 REGION_HEALTH 的 r 欄位
-  const regionOf = (f: FieldRecord): string => {
-    const n = f.nm
-    if (n.startsWith('臺北') || n.startsWith('台北')) return '臺北市'
-    if (n.startsWith('新北')) return '新北市'
-    if (n.startsWith('桃園')) return '桃園市'
-    if (n.startsWith('新竹')) return '新竹縣市'
-    if (n.startsWith('臺中') || n.startsWith('台中')) return '臺中市'
-    if (n.startsWith('臺南') || n.startsWith('台南')) return '臺南市'
-    if (n.startsWith('高雄')) return '高雄市'
-    return '其他'
+  /* 1,284 場域,篩選一次就好 —— 翻頁不該重算母體 */
+  const rows = useMemo(() => filterFields(filters), [filters])
+  const kpi = useMemo(() => computeOverviewKpi(rows, filters.range), [rows, filters.range])
+  const rangeMetrics = (f: FieldRecord) => metricsFor(f, filters.range)
+  const activeCount = activeFilterCount(filters)
+  /* 篩到 0 筆時平均值沒有意義 —— 顯示破折號,不要讓 NaN 上檯面 */
+  const empty = rows.length === 0
+
+  /* 類型分布與 upsell 戶數也吃 filtered 母體 —— 只有 KPI 動、分布卡不動的話,
+   * 同一畫面會出現「21 場域」與「全 1,284 場域」兩套數字。 */
+  const catDist = CATEGORY_DIST.map((d) => {
+    const n = rows.filter((f) => f.cat === d.id).length
+    return { id: d.id, n, pct: rows.length === 0 ? 0 : Math.round((n / rows.length) * 1000) / 10 }
+  })
+  const dispCount = (key: Disposition) => {
+    const ids = DISPOSITION_ROLLUP.find((r) => r.key === key)!.catIds
+    return rows.filter((f) => ids.includes(f.cat)).length
   }
-  // 場域明細表的顯示資料(依選中區域過濾)
-  const visibleFields = selectedRegion
-    ? FIELDS_A_FULL.filter((f) => regionOf(f) === selectedRegion)
-    : FIELDS_A_FULL
+  const upsellCount = (cid: CatId) => rows.filter((f) => f.cat === cid).length
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / OVERVIEW_PAGE_SIZE))
+  const current = Math.min(page, pageCount - 1)
+  const visibleFields = rows.slice(current * OVERVIEW_PAGE_SIZE, current * OVERVIEW_PAGE_SIZE + OVERVIEW_PAGE_SIZE)
   const selectedRegionMeta = selectedRegion ? REGION_HEALTH.find((x) => x.r === selectedRegion) : null
 
   const heatLegend: Record<HeatDim, { lbls: { c: string; t: string }[]; tip: string }> = {
@@ -118,72 +200,130 @@ function AOverview({
 
   return (
     <>
-      {/* KPI 卡 — 2026-05-29 依 PDF 改成 5 卡:場域 / 連網開機 / 空氣品質 / 空氣濕度 / 環境健康分數 */}
-      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }} {...batchAttrs('A.KPI')}>
-        {/* ① 使用中場域 */}
-        <div className="kpi green">
-          <div className="lbl">使用中場域</div>
-          <div className="val">1,284<span className="u">處</span></div>
-          <div className="ft">
-            <span className="delta up"><Icon name="up" size={11} />+12 MoM</span>
-            <Sparkline data={SITE_TREND.slice(-8)} color="var(--as-primary)" />
-          </div>
-        </div>
+      {/* 篩選列 —— 六個條件同時作用在 KPI 字卡與下方明細表(2026-09-03) */}
+      <div className="fb" style={{ marginBottom: 16 }} {...batchAttrs('A.設備總覽.篩選列')}>
+        <OvFilter
+          label="機型" value={filters.model}
+          options={[{ k: ALL, label: '全部' }, ...FILTER_OPTIONS.model.map((m) => ({ k: m, label: m }))]}
+          onChange={(v) => setFilter('model', v as OverviewFilters['model'])}
+        />
+        <OvFilter
+          label="電源" value={filters.power}
+          options={[{ k: ALL, label: '全部' }, ...FILTER_OPTIONS.power.map((m) => ({ k: m, label: m }))]}
+          onChange={(v) => setFilter('power', v as OverviewFilters['power'])}
+        />
+        <OvFilter
+          label="使用模式" value={filters.mode}
+          options={[{ k: ALL, label: '全部' }, ...FILTER_OPTIONS.mode.map((m) => ({ k: m, label: m }))]}
+          onChange={(v) => setFilter('mode', v as OverviewFilters['mode'])}
+        />
+        <OvFilter
+          label="PM2.5" value={filters.pm}
+          options={[{ k: ALL, label: '全部' }, ...PM_BUCKETS.map((b) => ({ k: b.k, label: b.label }))]}
+          onChange={(v) => setFilter('pm', v)}
+        />
+        <OvFilter
+          label="濕度" value={filters.humidity}
+          options={[{ k: ALL, label: '全部' }, ...HUMIDITY_BUCKETS.map((b) => ({ k: b.k, label: b.label }))]}
+          onChange={(v) => setFilter('humidity', v)}
+        />
+        <OvFilter
+          label="時間區間" value={filters.range}
+          options={TIME_RANGES.map((r) => ({ k: r.k, label: r.label }))}
+          onChange={(v) => setFilter('range', v as OverviewFilters['range'])}
+        />
+        {selectedRegionMeta && (
+          <span
+            className="chip on"
+            style={{ cursor: 'pointer' }}
+            title="清除區域篩選"
+            onClick={() => setFilter('region', null)}
+          >
+            <Icon name="globe" size={11} />
+            {selectedRegionMeta.r}
+            <Icon name="x" size={10} />
+          </span>
+        )}
+        <span className="sp"></span>
+        <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>
+          已套用 {activeCount} 項
+        </span>
+        <button
+          className="btn"
+          disabled={activeCount === 0 && filters.range === DEFAULT_FILTERS.range}
+          onClick={() => { setFilters(DEFAULT_FILTERS); setPage(0) }}
+          style={{ padding: '4px 10px', fontSize: 11, height: 'auto', whiteSpace: 'nowrap' }}
+        >
+          <Icon name="x" size={11} />清除
+        </button>
+      </div>
 
-        {/* ② 連網裝置 — 副標改開機率 */}
-        <div className="kpi purple">
-          <div className="lbl">連網裝置 · 今日開機率</div>
-          <div className="val">4,832<span className="u">台</span></div>
-          <div className="ft">
-            <span className="delta up">
-              <Icon name="zap" size={11} />
-              {TODAY_POWER_ON.pct}% 開機 · {TODAY_POWER_ON.active.toLocaleString()} 台
-            </span>
-            <Sparkline data={[83.2, 84.1, 85.4, 86.2, 86.8, 87.1, 87.4, 87.5]} color="var(--as-cdefg)" />
-          </div>
-        </div>
+      {/* KPI 七格(2026-09-03 依需求改版):第一排現況指標、第二排待處理量 */}
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 16 }} {...batchAttrs('A.KPI')}>
+        <OvKpi
+          tone="green" lbl="連網設備數" val={kpi.devices.toLocaleString()} unit="台"
+          foot={`今日開機 ${kpi.online.toLocaleString()} 台 · ${kpi.onlinePct}%`} footTone="up"
+          spark={[83.2, 84.1, 85.4, 86.2, 86.8, 87.1, 87.4, 87.5]} sparkColor="var(--as-cdefg)"
+        />
+        <OvKpi
+          tone="green" lbl="平均 PM2.5" val={empty ? '—' : kpi.pm.toFixed(1)} unit="µg/m³"
+          foot={`WHO 指引 ${WHO_PM25_GUIDELINE} µg/m³ 以下`} footTone="up"
+          spark={[8, 7, 6, 6, 5, 4, 3, 2]} sparkColor="var(--as-success)"
+        />
+        <OvKpi
+          tone="purple" lbl="平均濕度" val={empty ? '—' : String(kpi.humidity)} unit="%"
+          foot="舒適區間 50–60%" footTone={!empty && kpi.humidity >= 50 && kpi.humidity <= 60 ? 'up' : ''}
+          spark={[55, 56, 57, 58, 58, 57, 58, 58]} sparkColor="var(--as-cdefg)"
+        />
+        <OvKpi
+          tone="purple" lbl="平均溫度" val={empty ? '—' : kpi.temp.toFixed(1)} unit="°C"
+          foot="舒適區間 24–27°C" footTone={!empty && kpi.temp >= 24 && kpi.temp <= 27 ? 'up' : ''}
+          spark={[26.1, 26.3, 26.4, 26.6, 26.8, 26.7, 26.6, 26.6]} sparkColor="var(--as-h)"
+        />
+      </div>
+      <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <OvKpi
+          tone="orange" lbl="平均 AirCare 分數" val={empty ? '—' : String(kpi.score)} unit="分"
+          foot={`機器貢獻 +${DHI_ATTRIBUTION.contributedBy} 分`} footTone="up"
+          spark={AHI_TREND} sparkColor="var(--as-warning)"
+        />
+        <OvKpi
+          tone="red" lbl="耗材立即處理數" val={kpi.urgent.toLocaleString()} unit="台"
+          foot="耗材殘量 < 20% · 需派工" footTone="dn"
+        />
+        <OvKpi
+          tone="red" lbl="警報設備數" val={kpi.alarms.toLocaleString()} unit="台"
+          foot="有未解除警報" footTone="dn"
+        />
+      </div>
 
-        {/* ③ 空氣品質 PM2.5(2026-05-29 依 PDF,原 DHI 改放第 5 卡) */}
-        <div className="kpi green">
-          <div className="lbl">空氣品質 · PM2.5</div>
-          <div className="val">2<span className="u">µg/m³</span></div>
-          <div className="ft">
-            <span className="delta up"><Icon name="down" size={11} />−1.8 vs 昨日 · WHO 良好</span>
-            <Sparkline data={[8, 7, 6, 6, 5, 4, 3, 2]} color="var(--as-success)" />
-          </div>
-        </div>
-
-        {/* ④ 空氣濕度 58 %(2026-05-29 依 PDF,原類型處置分布移除 — 該圖表在下方六大類型卡仍可見) */}
-        <div className="kpi purple">
-          <div className="lbl">空氣濕度 · 平均相對</div>
-          <div className="val">58<span className="u">%</span></div>
-          <div className="ft">
-            <span className="delta up"><Icon name="up" size={11} />舒適區間 50–60%</span>
-            <Sparkline data={[55, 56, 57, 58, 58, 57, 58, 58]} color="var(--as-cdefg)" />
-          </div>
-        </div>
-
-        {/* ⑤ 平均環境健康分數(2026-05-29 新增,沿用原 DHI 82 分內容) */}
-        <div className="kpi orange">
-          <div className="lbl">平均環境健康分數</div>
-          <div className="val">82<span className="u">分</span></div>
-          <div className="ft">
-            <span className="delta up">
-              <Icon name="up" size={11} />機器貢獻 +{DHI_ATTRIBUTION.contributedBy} 分
-            </span>
-            <Sparkline data={AHI_TREND} color="var(--as-warning)" />
-          </div>
-        </div>
+      {/* 母體來源說明 —— 真實 vs 示範一定要分得出來(AGENTS.md §10) */}
+      <div style={{
+        marginTop: 12, padding: '8px 12px', borderRadius: 8,
+        background: 'var(--as-bg)', border: '1px solid var(--as-line-2)',
+        fontSize: 11, color: 'var(--as-ink-2)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+      }} {...batchAttrs('A.設備總覽.母體來源')}>
+        <Icon name="layers" size={12} />
+        <span>
+          目前條件下 <b>{kpi.fields.toLocaleString()}</b> 場域 · <b>{kpi.devices.toLocaleString()}</b> 台設備
+          {activeCount > 0 && <span style={{ color: 'var(--as-mute)' }}>(全體 {FIELDS_A_POP.length.toLocaleString()} 場域 / {TODAY_POWER_ON.total.toLocaleString()} 台)</span>}
+        </span>
+        <span style={{ color: 'var(--as-mute)' }}>
+          其中 {kpi.realFields} 場域 / {kpi.realDevices} 台為 AirCare 報告真實設備,量測值由 90 天 daily 真算;
+          其餘為示範資料,時間區間差異為決定性示意值。
+        </span>
       </div>
 
       {/* 六大類型分布 + 類型流動(Phase 1.5) */}
       <div className="two-col" style={{ marginTop: 16 }}>
         {/* 六大類型分布 */}
-        <div className="card" {...batchAttrs('A.整體.六大類型分布')}>
+        <div className="card" {...batchAttrs('A.設備總覽.六大類型分布')}>
           <div className="ch">
             <div>
               <h3>六大類型分布</h3>
-              <div className="csub">方案 C 業務端代號 · 全 1,284 場域 · 直接對應派工優先級</div>
+              <div className="csub">
+                方案 C 業務端代號 · {activeCount > 0 ? `目前條件 ${rows.length.toLocaleString()}` : `全 ${rows.length.toLocaleString()}`} 場域 · 直接對應派工優先級
+              </div>
             </div>
             <span style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--as-mute)' }}>
               <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--as-success)', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }}></span>OK</span>
@@ -192,7 +332,7 @@ function AOverview({
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-            {CATEGORY_DIST.map((d) => {
+            {catDist.map((d) => {
               const meta = catMeta(d.id)
               const disp = DISPOSITION_META[meta.disposition]
               const barPct = Math.min(100, d.pct * 3)
@@ -223,16 +363,20 @@ function AOverview({
           </div>
           <div style={{ marginTop: 12, padding: 10, background: 'var(--as-bg)', borderRadius: 6, fontSize: 11, color: 'var(--as-mute)', lineHeight: 1.6 }}>
             <b style={{ color: 'var(--as-ink-2)' }}>派工解讀:</b>
-            OK 類({okRow.n} 戶)維持證書節奏 · 建議類({attnRow.n} 戶)推 CS 系列定向 upsell · 警告類({warnRow.n} 戶)CS 一體機優先介入
+            OK 類({dispCount('ok')} 戶)維持證書節奏 · 建議類({dispCount('attention')} 戶)推 CS 系列定向 upsell · 警告類({dispCount('warning')} 戶)CS 一體機優先介入
           </div>
         </div>
 
         {/* 類型流動 */}
-        <div className="card" {...batchAttrs('A.整體.類型流動月遷移')}>
+        <div className="card" {...batchAttrs('A.設備總覽.類型流動月遷移')}>
           <div className="ch">
             <div>
               <h3>類型流動 · 本月遷移</h3>
-              <div className="csub">每週類型快照 · 已累積 {CATEGORY_FLOW_SUMMARY.snapshotWeeks} 週</div>
+              {/* 遷移是每週快照的差分,沒有逐場域的歷史類型可篩 —— 講明它不吃篩選,
+                  否則旁邊的分布卡動、這張不動會被當成 bug */}
+              <div className="csub">
+                每週類型快照 · 已累積 {CATEGORY_FLOW_SUMMARY.snapshotWeeks} 週 · 全體母體(不受篩選影響)
+              </div>
             </div>
             <span className="pill g" style={{ background: '#E0F2FE', borderColor: '#7DD3FC', color: '#075985' }}>Phase 1.5</span>
           </div>
@@ -284,17 +428,20 @@ function AOverview({
         <div className="ch">
           <div>
             <h3>建議聯繫客戶</h3>
-            <div className="csub">對應 CS 系列產品訴求 · 三類目標族群 · 共 238 戶 · 點任一卡查看場域清單</div>
+            <div className="csub">
+              對應 CS 系列產品訴求 · 三類目標族群 · 共 {UPSELL_POOL.reduce((n, s) => n + upsellCount(s.catId), 0).toLocaleString()} 戶 · 點任一卡查看場域清單
+            </div>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 8 }}>
           {UPSELL_POOL.map((slot) => {
             const meta = catMeta(slot.catId)
+            const n = upsellCount(slot.catId)
             return (
               <div
                 key={slot.catId}
                 onClick={() => onJumpListByCategory(slot.catId)}
-                title={`查看 ${meta.code}(${slot.n} 戶)的場域清單`}
+                title={`查看 ${meta.code}(${n} 戶)的場域清單`}
                 style={{
                   padding: 14, border: `1px solid ${meta.color}40`,
                   background: meta.bg, borderRadius: 10,
@@ -309,7 +456,7 @@ function AOverview({
                   <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>· {slot.persona}</span>
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: meta.color, lineHeight: 1, marginBottom: 8 }}>
-                  {slot.n}<span style={{ fontSize: 11, color: 'var(--as-mute)', fontWeight: 400, marginLeft: 4 }}>戶</span>
+                  {n}<span style={{ fontSize: 11, color: 'var(--as-mute)', fontWeight: 400, marginLeft: 4 }}>戶</span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--as-ink-2)', marginBottom: 8, lineHeight: 1.5 }}>
                   <b>{slot.product}</b><br />
@@ -340,14 +487,15 @@ function AOverview({
               <h3>健康度 Top 5</h3>
               <div className="csub">過去 7 天平均 · 含類型代號與日均開機時數</div>
             </div>
-            <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>平均 81.4</span>
+            <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>平均 {empty ? '—' : kpi.score}</span>
           </div>
           <div className="rank">
-            {[...FIELDS_A_FULL].sort((a, b) => b.q - a.q).slice(0, 5).map((f, i) => {
+            {[...rows].sort((a, b) => rangeMetrics(b).q - rangeMetrics(a).q).slice(0, 5).map((f, i) => {
               const dlt = FIELD_DELTAS[f.id] ?? 0
               const dCls = dlt > 0 ? '' : dlt < 0 ? 'dn' : 'flat'
               const dStr = dlt > 0 ? `▲ ${dlt}` : dlt < 0 ? `▼ ${Math.abs(dlt)}` : '— 0'
               const meta = catMeta(f.cat)
+              const mq = rangeMetrics(f).q
               return (
                 <div className="rk" key={f.id} style={{ cursor: 'pointer' }} onClick={() => onOpenDetail(f.id)}>
                   <div className={`rk-rk ${i < 3 ? 'gold' : ''}`}>{i + 1}</div>
@@ -362,11 +510,11 @@ function AOverview({
                   </div>
                   <div className="rk-bar">
                     <div className="rk-tr">
-                      <div className="rk-fi" style={{ width: `${f.q}%` }}></div>
+                      <div className="rk-fi" style={{ width: `${mq}%` }}></div>
                     </div>
                   </div>
                   <div className="rk-v">
-                    {f.q}<span className="u">/100</span>
+                    {mq}<span className="u">/100</span>
                     <span className={`dlt ${dCls}`}>{dStr}</span>
                   </div>
                 </div>
@@ -382,14 +530,17 @@ function AOverview({
               <h3>需關注 · 健康度 &lt; 75</h3>
               <div className="csub">類型代號 + 時數一眼分辨「沒在用 vs 用了還是差」</div>
             </div>
-            <span className="csub" style={{ color: 'var(--as-danger)', fontWeight: 600 }}>● 23 個場域</span>
+            <span className="csub" style={{ color: 'var(--as-danger)', fontWeight: 600 }}>
+              ● {rows.filter((f) => rangeMetrics(f).q < 75).length.toLocaleString()} 個場域
+            </span>
           </div>
           <div className="rank">
-            {[...FIELDS_A_FULL].sort((a, b) => a.q - b.q).slice(0, 4).map((f) => {
+            {[...rows].sort((a, b) => rangeMetrics(a).q - rangeMetrics(b).q).slice(0, 4).map((f) => {
               const dlt = FIELD_DELTAS[f.id] ?? 0
               const dCls = dlt > 0 ? '' : dlt < 0 ? 'dn' : 'flat'
               const dStr = dlt > 0 ? `▲ ${dlt}` : dlt < 0 ? `▼ ${Math.abs(dlt)}` : '— 0'
               const meta = catMeta(f.cat)
+              const mq = rangeMetrics(f).q
               const lowUse = f.hrs < 8
               return (
                 <div className="rk" key={f.id} style={{ cursor: 'pointer' }} onClick={() => onOpenDetail(f.id)}>
@@ -406,11 +557,11 @@ function AOverview({
                   </div>
                   <div className="rk-bar">
                     <div className="rk-tr">
-                      <div className={`rk-fi ${f.q < 60 ? 'r' : 'y'}`} style={{ width: `${f.q}%` }}></div>
+                      <div className={`rk-fi ${mq < 60 ? 'r' : 'y'}`} style={{ width: `${mq}%` }}></div>
                     </div>
                   </div>
                   <div className="rk-v">
-                    {f.q}<span className="u">/100</span>
+                    {mq}<span className="u">/100</span>
                     <span className={`dlt ${dCls}`}>{dStr}</span>
                   </div>
                 </div>
@@ -420,7 +571,7 @@ function AOverview({
         </div>
 
         {/* 區域分佈 — 三維度切換 */}
-        <div className="card span-2" {...batchAttrs('A.整體.區域熱圖')}>
+        <div className="card span-2" {...batchAttrs('A.設備總覽.區域熱圖')}>
           <div className="ch">
             <div>
               <h3>區域分佈 — 三維度熱圖</h3>
@@ -484,7 +635,7 @@ function AOverview({
                 <div
                   className={`heat ${cls}`}
                   key={x.r}
-                  onClick={() => setSelectedRegion(isActive ? null : x.r)}
+                  onClick={() => setFilter('region', isActive ? null : x.r)}
                   title={isActive ? `取消選取「${x.r}」` : `點擊鎖定「${x.r}」並篩選下方場域明細表`}
                   style={{
                     opacity: heatDim === 'gap' ? 0.85 : 1,
@@ -520,10 +671,9 @@ function AOverview({
         </div>
       </div>
 
-      {/* 場域明細表(加六大類型欄、室外 PM2.5 欄、日均 hrs 欄)
-          · 2026-05-29 連動上方區域熱圖:點區域 → 此表自動篩選 */}
-      <div className="dt-wrap" style={{ marginTop: 16 }} {...batchAttrs('A.整體.場域明細表')}>
-        {/* 區域篩選 chip(由區域熱圖點擊帶入時顯示) */}
+      {/* 場域明細表 —— 母體為 filterFields 的結果,與上方七張 KPI 字卡同源。
+          2026-09-03:新增機型 / 電源 / 使用模式 / 濕度 / 溫度欄,分頁改成真的。 */}
+      <div className="dt-wrap" style={{ marginTop: 16 }} {...batchAttrs('A.設備總覽.場域明細表')}>
         {selectedRegionMeta && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
@@ -544,12 +694,12 @@ function AOverview({
             <span style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>
               該區 <b style={{ color: 'var(--as-primary)' }}>{selectedRegionMeta.n}</b> 場域 · 健康度 {selectedRegionMeta.q}
               <span style={{ color: 'var(--as-mute)', marginLeft: 6 }}>
-                · 表內示意 {visibleFields.length} 筆(全體 mock {FIELDS_A_FULL.length} 筆)
+                · 套用其他篩選後符合 {rows.length.toLocaleString()} 筆
               </span>
             </span>
             <button
               className="btn"
-              onClick={() => setSelectedRegion(null)}
+              onClick={() => setFilter('region', null)}
               style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11, height: 'auto' }}
             >
               <Icon name="x" size={11} />清除篩選
@@ -562,13 +712,15 @@ function AOverview({
               <th style={{ width: 32 }}><input type="checkbox" /></th>
               <th>場域</th>
               <th>客戶編號</th>
-              <th>類型</th>
+              <th>機型</th>
+              <th>電源</th>
+              <th>使用模式</th>
               <th>六大類型</th>
-              <th>坪數</th>
               <th>設備</th>
               <th>狀態</th>
               <th>PM2.5</th>
-              <th>室外 PM2.5</th>
+              <th>濕度</th>
+              <th>溫度</th>
               <th>日均</th>
               <th>會員等級</th>
               <th></th>
@@ -578,38 +730,63 @@ function AOverview({
             {visibleFields.map((f) => {
               const meta = catMeta(f.cat)
               const outdoor = FIELD_OUTDOOR_PM25[f.id]
+              const m = rangeMetrics(f)
+              const isReal = REAL_FIELD_IDS.includes(f.id)
               return (
                 <tr key={f.id} style={{ cursor: 'pointer' }} onClick={() => onOpenDetail(f.id)}>
                   <td onClick={(e) => e.stopPropagation()}><input type="checkbox" /></td>
                   <td>
-                    <div className="dt-nm">{f.customerName}</div>
+                    <div className="dt-nm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {f.customerName}
+                      {isReal
+                        ? <span className="pill g" style={{ fontSize: 9, fontWeight: 600 }}>真實</span>
+                        : <span className="pill" style={{ fontSize: 9 }}>示範</span>}
+                    </div>
                     <div className="dt-sub">{f.nm} · {f.addr}</div>
+                    <div className="dt-sub" style={{ color: 'var(--as-mute)' }}>{f.type}{f.sz > 0 ? ` · ${f.sz} 坪` : ''}</div>
                   </td>
                   <td className="mono mute">{f.customerId}</td>
-                  <td><span className="tt">{f.type}</span></td>
+                  <td>
+                    <span className="mono" style={{ fontSize: 11, color: f.model === '未登錄' ? 'var(--as-mute)' : 'var(--as-ink-2)' }}>
+                      {f.model}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="lamp">
+                      <span className={`d ${f.power === '開機' ? 'g' : f.power === '關機' ? 'y' : 'r'}`}></span>
+                      {f.power}
+                    </span>
+                  </td>
+                  <td style={{ fontSize: 11, color: 'var(--as-ink-2)', whiteSpace: 'nowrap' }}>{f.mode}</td>
                   <td>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', gap: 4,
                       fontSize: 11, padding: '2px 8px', borderRadius: 10,
-                      background: meta.bg, color: meta.color, fontWeight: 600,
+                      background: meta.bg, color: meta.color, fontWeight: 600, whiteSpace: 'nowrap',
                     }}>
                       <span style={{ fontFamily: 'var(--f-mono)' }}>{meta.id}</span>
                       <span>{meta.code}</span>
                     </span>
                   </td>
-                  <td>{f.sz}</td>
-                  <td>{f.dev}</td>
+                  <td className="mono" style={{ whiteSpace: 'nowrap' }}>{f.dev}</td>
                   <td>
                     <span className="lamp">
                       <span className={`d ${f.lamp}`}></span>
                       {f.lamp === 'g' ? '正常' : f.lamp === 'y' ? '警示' : '異常'}
                     </span>
                   </td>
-                  <td><span className={`pill ${f.pm > 50 ? 'r' : f.pm > 25 ? 'y' : 'g'}`}>{f.pm}</span></td>
                   <td>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>{outdoor}</span>
-                    <span style={{ fontSize: 9, color: 'var(--as-mute)', marginLeft: 4 }}>待接入</span>
+                    <span className={`pill ${m.pm >= 10 ? 'r' : m.pm >= 5 ? 'y' : 'g'}`}>{m.pm.toFixed(1)}</span>
+                    {outdoor !== undefined && (
+                      <div className="mono mute" style={{ fontSize: 9 }}>室外 {outdoor} 待接入</div>
+                    )}
                   </td>
+                  <td>
+                    <span className="mono" style={{ fontSize: 11, color: m.humidity >= 70 || m.humidity < 40 ? 'var(--as-danger)' : 'var(--as-ink-2)' }}>
+                      {m.humidity.toFixed(0)}%
+                    </span>
+                  </td>
+                  <td className="mono" style={{ fontSize: 11, color: 'var(--as-ink-2)' }}>{m.temp.toFixed(1)}°C</td>
                   <td className="mono">{f.hrs}<span style={{ color: 'var(--as-mute)' }}>h</span></td>
                   <td>
                     {f.tier === 'g'
@@ -624,22 +801,31 @@ function AOverview({
                 </tr>
               )
             })}
+            {empty && (
+              <tr>
+                <td colSpan={15} style={{ textAlign: 'center', padding: '28px 0', color: 'var(--as-mute)', fontSize: 12 }}>
+                  目前條件沒有符合的場域 —— 放寬篩選或按右上「清除」。
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
         <div className="dt-foot">
           <span>
-            {selectedRegionMeta
-              ? `顯示 ${visibleFields.length} / ${selectedRegionMeta.n} 筆(區域:${selectedRegionMeta.r})· 點任一列進場域詳情`
-              : `顯示 ${visibleFields.length} / 1,284 筆 · 點任一列 → 切到個人層場域詳情 · 「室外 PM2.5」待環境部 API 接通`}
+            {empty
+              ? '共 0 筆'
+              : `第 ${current * OVERVIEW_PAGE_SIZE + 1}–${current * OVERVIEW_PAGE_SIZE + visibleFields.length} 筆 · 共 ${rows.length.toLocaleString()} 場域 / ${kpi.devices.toLocaleString()} 台`}
+            <span style={{ color: 'var(--as-mute)', marginLeft: 6 }}>
+              · 量測值為{TIME_RANGES.find((r) => r.k === filters.range)?.label}平均 · 點任一列進場域詳情
+            </span>
           </span>
           <div className="pager">
-            <button>‹</button>
-            <button className="on">1</button>
-            <button>2</button>
-            <button>3</button>
-            <span className="ell">…</span>
-            <button>{selectedRegionMeta ? Math.max(1, Math.ceil(selectedRegionMeta.n / 9)) : 143}</button>
-            <button>›</button>
+            <button onClick={() => setPage(Math.max(0, current - 1))} disabled={current === 0}>‹</button>
+            {pageWindow(current, pageCount).map((i, idx) =>
+              i < 0
+                ? <span className="ell" key={`e${idx}`}>…</span>
+                : <button key={i} className={i === current ? 'on' : ''} onClick={() => setPage(i)}>{i + 1}</button>)}
+            <button onClick={() => setPage(Math.min(pageCount - 1, current + 1))} disabled={current === pageCount - 1}>›</button>
           </div>
         </div>
       </div>
@@ -2599,7 +2785,7 @@ function ALocationDetail({
               : <>本場域在分群中排名 <b style={{ color: 'var(--as-ink)' }}>#{d.cohortRank}/{d.cohortSize}</b>(同類型平均 {d.cohortAvg} 分)</>}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn" onClick={onJumpOverview}><Icon name="chart" size={13} />回整體層</button>
+            <button className="btn" onClick={onJumpOverview}><Icon name="chart" size={13} />回設備總覽</button>
             <button className="btn" onClick={onJumpSegments}><Icon name="layers" size={13} />同分群比較</button>
             <button className="btn" onClick={onBackToList}><Icon name="menu" size={13} />回場域清單</button>
           </div>
@@ -2634,7 +2820,7 @@ export function ModuleA() {
   }
 
   const tabs = [
-    { k: 'overview', l: '整體場域' },
+    { k: 'overview', l: '設備總覽' },
     { k: 'segments', l: '分類概況' },
     { k: 'list', l: '場域清單', n: 1284 },
     { k: 'personal', l: '個人場域資訊' },

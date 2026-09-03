@@ -133,6 +133,18 @@ export const CATEGORY_FLOW_SUMMARY = {
 }
 
 /* ── 場域記錄(加 cat 類型 + hrs 日均開機時數 + customerId 客戶編號) ── */
+/* 設備屬性 —— 2026-09-03「設備總覽」六個篩選條件需要。
+ * 真實三台一律由 DEVICE_REPORTS 推導;報告沒寫的(例如 model 為空字串)標「未登錄」,不補假值。 */
+export type DeviceModel = 'CS101' | 'CS201' | 'CS301' | 'CS500' | '未登錄'
+/* power 與 devOnline 同源,不得各自為政:
+ *   開機 ⟺ devOnline > 0;關機 = 設備仍連網但今日皆未開機;離線 = 今日完全無回報。 */
+export type PowerState = '開機' | '關機' | '離線'
+export type UsageMode = '雙智慧' | '清淨智慧' | '除濕智慧' | '手動風量' | '睡眠' | '除臭'
+
+export const DEVICE_MODELS: DeviceModel[] = ['CS101', 'CS201', 'CS301', 'CS500', '未登錄']
+export const POWER_STATES: PowerState[] = ['開機', '關機', '離線']
+export const USAGE_MODES: UsageMode[] = ['雙智慧', '清淨智慧', '除濕智慧', '手動風量', '睡眠', '除臭']
+
 export interface FieldRecord {
   nm: string           // 實體場域名(如「臺北信義居家」),作為副資訊
   id: string           // 場域編號 SH-xxxx(內部識別)
@@ -152,6 +164,16 @@ export interface FieldRecord {
   hrs: number          // 日均開機時數
   minPct: number       // 該場域 6 類耗材的最低殘量 %(用於分群第 1 軸)
   predictedDays: number // 最快需要更換的耗材預估剩餘天數
+  /* ↓ 設備總覽篩選與 KPI 字卡用 */
+  model: DeviceModel   // 機型
+  power: PowerState    // 場域主要電源狀態
+  mode: UsageMode      // 時數占比最高的使用模式
+  humidity: number     // 平均相對濕度 %
+  temp: number         // 平均溫度 °C
+  devTotal: number     // 場域設備總數(全母體 Σ = 4,832,對齊 TODAY_POWER_ON.total)
+  devOnline: number    // 今日開機數(全母體 Σ = 4,231,對齊 TODAY_POWER_ON.active)
+  urgentParts: number  // 耗材判定「立即處理」的設備數
+  alarmDevices: number // 有未解除警報的設備數
 }
 
 /* 真實設備 → 場域清單列。nm 由地址前兩段推出,只為清單好讀;主鍵仍是 MAC。 */
@@ -159,6 +181,12 @@ const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
   const m = r.meta
   const worst = [...r.consumables].sort((a, b) => a.remainingPct - b.remainingPct)[0]
   const city = m.address.slice(0, 3), dist = m.address.slice(3, 5)
+  /* 設備屬性全部推導,不手填:model 空字串代表報告沒帶機型,標「未登錄」而非猜一個。 */
+  const runOn = r.runStates.find((x) => x.label === '正常運轉')?.hours ?? 0
+  const runOff = r.runStates.find((x) => x.label === '關機')?.hours ?? 0
+  const topMode = [...r.modes].sort((a, b) => b.hours - a.hours)[0]
+  const tempAvg = r.daily.reduce((s, d) => s + d.temp, 0) / r.daily.length
+  const isOn = runOn > 0 && runOn >= runOff
   return {
     nm: `${city.replace('臺', '台')}${dist}居家`,
     id: deviceFieldId(m.mac),
@@ -166,7 +194,7 @@ const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
     /* 清單不顯示姓名(個資不落地);要看是誰,點進場域詳情由識別卡即時向 SF 取。 */
     customerName: m.customerCode,
     addr: m.address.slice(3),
-    type: '居家', sz: 0, dev: '1/1',
+    type: '居家', sz: 0, dev: isOn ? '1/1' : '0/1',
     lamp: m.airScore >= 75 ? 'g' : m.airScore >= 60 ? 'y' : 'r',
     q: Math.round(m.airScore),
     pm: Math.round(r.daily[r.daily.length - 1].avg),
@@ -177,6 +205,15 @@ const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
     hrs: Math.round(m.runHours / m.days * 10) / 10,
     minPct: worst.remainingPct,
     predictedDays: Math.round(worst.daysLeft),
+    model: (DEVICE_MODELS as string[]).includes(m.model) ? (m.model as DeviceModel) : '未登錄',
+    power: runOn <= 0 ? '離線' : isOn ? '開機' : '關機',
+    mode: (USAGE_MODES as string[]).includes(topMode?.label) ? (topMode.label as UsageMode) : '雙智慧',
+    humidity: Math.round(m.humidityAvg * 10) / 10,
+    temp: Math.round(tempAvg * 10) / 10,
+    devTotal: 1,
+    devOnline: isOn ? 1 : 0,
+    urgentParts: r.consumables.some((c) => c.urgency === '立即處理') ? 1 : 0,
+    alarmDevices: m.lastAlarmCode !== 0 ? 1 : 0,
   }
 })
 
@@ -184,15 +221,24 @@ export const FIELDS_A_FULL: FieldRecord[] = [
   /* ★ 真實資料列(3 台),由 DEVICE_REPORTS 產生 —— 見本檔後段 fieldDetailFromReport。
    *   其餘 9 列仍為示範資料。 */
   ...DEVICE_ROWS,
-  { nm: '臺北信義居家',   id: 'SH-0021', customerId: 'C202105001', customerName: '陳俊宏',       addr: '信義區松仁路',  type: '居家', sz: 42,  dev: '4/4',  lamp: 'g', q: 92, pm: 12, co2: 642,  mem: '陳俊宏 · 高級',  tier: 'g', cat: '1', hrs: 18.2, minPct: 64, predictedDays:  72 },
-  { nm: '新北板橋辦公',   id: 'SH-1147', customerId: 'C202003042', customerName: '李文君',       addr: '板橋區文化路',  type: '辦公', sz: 88,  dev: '8/9',  lamp: 'y', q: 76, pm: 32, co2: 894,  mem: '李文君',         tier: '',  cat: '3', hrs: 10.4, minPct: 28, predictedDays:  18 },
-  { nm: '臺中科技園區',   id: 'SH-2841', customerId: 'C201000272', customerName: '王婉真',       addr: '西屯區工業區',  type: '辦公', sz: 185, dev: '6/10', lamp: 'r', q: 48, pm: 84, co2: 1240, mem: '王婉真 · 高級',  tier: 'g', cat: '6', hrs:  6.1, minPct: 11, predictedDays:   6 },
-  { nm: '高雄前鎮辦公',   id: 'SH-3052', customerId: 'C202206018', customerName: '張志成',       addr: '前鎮區成功二路', type: '辦公', sz: 64,  dev: '5/5',  lamp: 'g', q: 88, pm: 18, co2: 720,  mem: '張志成',         tier: '',  cat: '2', hrs: 14.6, minPct: 52, predictedDays:  48 },
-  { nm: '桃園藝文居家',   id: 'SH-4119', customerId: 'C201912033', customerName: '黃慧君',       addr: '桃園區慈文路',  type: '居家', sz: 38,  dev: '3/3',  lamp: 'g', q: 95, pm:  8, co2: 580,  mem: '黃慧君 · 高級',  tier: 'g', cat: '1', hrs: 20.8, minPct: 71, predictedDays:  88 },
-  { nm: '臺南安平診所',   id: 'SH-5023', customerId: 'C202109054', customerName: '安平診所',     addr: '安平區永華路',  type: '醫療', sz: 96,  dev: '7/8',  lamp: 'y', q: 71, pm: 38, co2: 920,  mem: '林醫師',         tier: '',  cat: '5', hrs:  9.2, minPct: 22, predictedDays:  14 },
-  { nm: '新竹東區居家',   id: 'SH-5208', customerId: 'C202304076', customerName: '吳承翰',       addr: '東區光復路',    type: '居家', sz: 52,  dev: '4/4',  lamp: 'g', q: 90, pm: 14, co2: 620,  mem: '吳承翰 · 高級',  tier: 'g', cat: '2', hrs: 16.5, minPct: 58, predictedDays:  56 },
-  { nm: '臺北大安咖啡店', id: 'SH-5611', customerId: 'C202008123', customerName: '阿諾義式咖啡', addr: '大安區忠孝東路', type: '商業', sz: 28,  dev: '2/3',  lamp: 'y', q: 68, pm: 42, co2: 1080, mem: '阿諾義式',       tier: '',  cat: '4', hrs: 11.8, minPct: 18, predictedDays:   9 },
-  { nm: '宜蘭礁溪民宿',   id: 'SH-6022', customerId: 'C202105099', customerName: '陶然居民宿',   addr: '礁溪鄉德陽路',  type: '商業', sz: 76,  dev: '4/4',  lamp: 'g', q: 86, pm: 22, co2: 690,  mem: '陶然居',         tier: '',  cat: '2', hrs: 13.4, minPct: 46, predictedDays:  32 },
+  { nm: '臺北信義居家',   id: 'SH-0021', customerId: 'C202105001', customerName: '陳俊宏',       addr: '信義區松仁路',  type: '居家', sz: 42,  dev: '4/4',  lamp: 'g', q: 92, pm: 12, co2: 642,  mem: '陳俊宏 · 高級',  tier: 'g', cat: '1', hrs: 18.2, minPct: 64, predictedDays:  72,
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 54, temp: 25.8, devTotal:  4, devOnline: 4, urgentParts: 0, alarmDevices: 0 },
+  { nm: '新北板橋辦公',   id: 'SH-1147', customerId: 'C202003042', customerName: '李文君',       addr: '板橋區文化路',  type: '辦公', sz: 88,  dev: '8/9',  lamp: 'y', q: 76, pm: 32, co2: 894,  mem: '李文君',         tier: '',  cat: '3', hrs: 10.4, minPct: 28, predictedDays:  18,
+    model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 62, temp: 26.4, devTotal:  9, devOnline: 8, urgentParts: 1, alarmDevices: 1 },
+  { nm: '臺中科技園區',   id: 'SH-2841', customerId: 'C201000272', customerName: '王婉真',       addr: '西屯區工業區',  type: '辦公', sz: 185, dev: '6/10', lamp: 'r', q: 48, pm: 84, co2: 1240, mem: '王婉真 · 高級',  tier: 'g', cat: '6', hrs:  6.1, minPct: 11, predictedDays:   6,
+    model: 'CS500', power: '開機', mode: '手動風量', humidity: 74, temp: 28.9, devTotal: 10, devOnline: 6, urgentParts: 3, alarmDevices: 2 },
+  { nm: '高雄前鎮辦公',   id: 'SH-3052', customerId: 'C202206018', customerName: '張志成',       addr: '前鎮區成功二路', type: '辦公', sz: 64,  dev: '5/5',  lamp: 'g', q: 88, pm: 18, co2: 720,  mem: '張志成',         tier: '',  cat: '2', hrs: 14.6, minPct: 52, predictedDays:  48,
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 57, temp: 27.2, devTotal:  5, devOnline: 5, urgentParts: 0, alarmDevices: 0 },
+  { nm: '桃園藝文居家',   id: 'SH-4119', customerId: 'C201912033', customerName: '黃慧君',       addr: '桃園區慈文路',  type: '居家', sz: 38,  dev: '3/3',  lamp: 'g', q: 95, pm:  8, co2: 580,  mem: '黃慧君 · 高級',  tier: 'g', cat: '1', hrs: 20.8, minPct: 71, predictedDays:  88,
+    model: 'CS500', power: '開機', mode: '雙智慧',   humidity: 52, temp: 25.1, devTotal:  3, devOnline: 3, urgentParts: 0, alarmDevices: 0 },
+  { nm: '臺南安平診所',   id: 'SH-5023', customerId: 'C202109054', customerName: '安平診所',     addr: '安平區永華路',  type: '醫療', sz: 96,  dev: '7/8',  lamp: 'y', q: 71, pm: 38, co2: 920,  mem: '林醫師',         tier: '',  cat: '5', hrs:  9.2, minPct: 22, predictedDays:  14,
+    model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 61, temp: 26.8, devTotal:  8, devOnline: 7, urgentParts: 1, alarmDevices: 1 },
+  { nm: '新竹東區居家',   id: 'SH-5208', customerId: 'C202304076', customerName: '吳承翰',       addr: '東區光復路',    type: '居家', sz: 52,  dev: '4/4',  lamp: 'g', q: 90, pm: 14, co2: 620,  mem: '吳承翰 · 高級',  tier: 'g', cat: '2', hrs: 16.5, minPct: 58, predictedDays:  56,
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 55, temp: 25.6, devTotal:  4, devOnline: 4, urgentParts: 0, alarmDevices: 0 },
+  { nm: '臺北大安咖啡店', id: 'SH-5611', customerId: 'C202008123', customerName: '阿諾義式咖啡', addr: '大安區忠孝東路', type: '商業', sz: 28,  dev: '2/3',  lamp: 'y', q: 68, pm: 42, co2: 1080, mem: '阿諾義式',       tier: '',  cat: '4', hrs: 11.8, minPct: 18, predictedDays:   9,
+    model: 'CS101', power: '開機', mode: '除濕智慧', humidity: 68, temp: 27.9, devTotal:  3, devOnline: 2, urgentParts: 1, alarmDevices: 1 },
+  { nm: '宜蘭礁溪民宿',   id: 'SH-6022', customerId: 'C202105099', customerName: '陶然居民宿',   addr: '礁溪鄉德陽路',  type: '商業', sz: 76,  dev: '4/4',  lamp: 'g', q: 86, pm: 22, co2: 690,  mem: '陶然居',         tier: '',  cat: '2', hrs: 13.4, minPct: 46, predictedDays:  32,
+    model: 'CS201', power: '開機', mode: '睡眠',     humidity: 59, temp: 26.2, devTotal:  4, devOnline: 4, urgentParts: 0, alarmDevices: 0 },
 ]
 
 /* 當區室外 PM2.5(Phase 2 待接,先示意) */
@@ -307,6 +353,203 @@ export const SITE_TYPES: SiteType[] = [
   { nm: '醫療', n: 64, c: '#D97706' },
   { nm: '商業', n: 20, c: '#7C3AED' },
 ]
+
+/* ── 設備總覽母體(1,284 場域) ─────────────────────────────────────────
+ * 為什麼要生成:設備總覽的 KPI 字卡與六個篩選條件必須同源連動,而 FIELDS_A_FULL
+ * 只有 12 筆 —— 用 12 筆餵字卡,「4,832 台」會塌成個位數,與檯面數字打架。
+ *
+ * 生成規則:固定 seed 的 mulberry32,重整頁面數字不變;分布刻意對齊既有 mock,
+ * 不是隨便灑點:
+ *   - 六大類型筆數 = CATEGORY_DIST(412/386/248/124/78/36)
+ *   - 區域筆數     = REGION_HEALTH.n
+ *   - 場域類型筆數 = SITE_TYPES.n
+ *   - Σ devTotal   = TODAY_POWER_ON.total  (4,832)
+ *   - Σ devOnline  = TODAY_POWER_ON.active (4,231,開機率 87.5%)
+ *   - 平均 PM2.5 ≈ 2 µg/m³(與三台真實設備 90 天 pm25Avg 1.4 / 2.5 / 3.6 同量級)
+ *   - 平均濕度 ≈ 58%、平均 AirCare 分數 ≈ 82
+ * 前 12 筆是既有的 FIELDS_A_FULL(3 筆真實 + 9 筆手寫示範),數值一個都沒動。
+ * 生成列一律用「示範客戶 NNNN」與 C2099 開頭的編號 —— 不生成像真人的姓名(AGENTS.md §7)。
+ */
+
+/** 真實設備列的場域 id(其餘皆為示範資料) */
+export const REAL_FIELD_IDS: string[] = DEVICE_ROWS.map((r) => r.id)
+export const isDemoField = (f: FieldRecord): boolean => !REAL_FIELD_IDS.includes(f.id)
+
+function mulberry32(a: number): () => number {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const POP_BAND: Record<CatId, { pm: [number, number]; hum: [number, number]; temp: [number, number]; q: [number, number] }> = {
+  '1': { pm: [0.4, 1.2],  hum: [49, 61], temp: [24.0, 28.0], q: [88, 96] },
+  '2': { pm: [0.65, 1.7], hum: [51, 63], temp: [24.5, 28.5], q: [82, 90] },
+  '3': { pm: [1.1, 2.5],  hum: [55, 67], temp: [24.5, 29.0], q: [70, 80] },
+  '4': { pm: [0.85, 2.0], hum: [65, 79], temp: [25.0, 29.5], q: [64, 74] },
+  '5': { pm: [2.4, 4.9],  hum: [47, 63], temp: [25.0, 30.0], q: [60, 70] },
+  '6': { pm: [4.1, 8.3],  hum: [67, 81], temp: [25.5, 30.5], q: [46, 56] },
+}
+
+const MODEL_WEIGHT: [DeviceModel, number][] = [['CS101', 0.42], ['CS201', 0.26], ['CS301', 0.18], ['CS500', 0.11], ['未登錄', 0.03]]
+const MODE_WEIGHT: [UsageMode, number][] = [['雙智慧', 0.46], ['清淨智慧', 0.19], ['除濕智慧', 0.14], ['手動風量', 0.11], ['睡眠', 0.07], ['除臭', 0.03]]
+
+/* 區域 → 行政區。nm 的前兩字要能被 regionOf() 對回 REGION_HEALTH,否則熱圖點擊會篩不到列。 */
+const REGION_DISTRICTS: Record<string, string[]> = {
+  '臺北市':   ['信義', '大安', '中山', '松山', '內湖', '士林', '北投', '文山'],
+  '新北市':   ['板橋', '新莊', '中和', '永和', '三重', '新店', '土城', '汐止'],
+  '桃園市':   ['桃園', '中壢', '平鎮', '八德', '龜山', '蘆竹'],
+  '新竹縣市': ['東區', '北區', '竹北', '湖口'],
+  '臺中市':   ['西屯', '北屯', '南屯', '西區', '南區', '大里'],
+  '臺南市':   ['安平', '東區', '中西', '永康', '仁德'],
+  '高雄市':   ['前鎮', '左營', '三民', '鳳山', '楠梓', '苓雅'],
+  /* 非六都直接寫完整行政區名 —— 這些是鄉/市,補「區」會變成不存在的地名 */
+  '其他':     ['礁溪鄉', '花蓮市', '臺東市', '南投市', '嘉義市', '屏東市'],
+}
+/** nm 前綴:regionOf() 認得的縣市名(新竹縣市在 nm 上寫「新竹」) */
+const REGION_PREFIX: Record<string, string> = {
+  '臺北市': '臺北', '新北市': '新北', '桃園市': '桃園', '新竹縣市': '新竹',
+  '臺中市': '臺中', '臺南市': '臺南', '高雄市': '高雄', '其他': '',
+}
+const ROADS = ['中正路', '中山路', '民生路', '光復路', '文化路', '成功路', '復興路', '建國路', '和平路', '自由路', '大同路', '忠孝路']
+const SECTIONS = ['', '', '一段', '二段', '三段', '四段']
+/** 行政區已帶「區/鄉/鎮/市」就不再補,否則會生出「南區區」這種地名 */
+const distAddr = (d: string) => (/[區鄉鎮市]$/.test(d) ? d : `${d}區`)
+
+/** 依 target 各鍵的筆數排出序列,扣掉 curated 已占的名額 */
+function popSequence<T extends string>(target: Record<T, number>, curated: Record<string, number>): T[] {
+  const out: T[] = []
+  for (const k of Object.keys(target) as T[]) {
+    for (let i = 0; i < target[k] - (curated[k] ?? 0); i++) out.push(k)
+  }
+  return out
+}
+/** 決定性洗牌 —— 不洗的話同類會連號擠在同一頁,翻頁時看起來像壞掉 */
+function popShuffle<T>(arr: T[], seed: number): T[] {
+  const r = mulberry32(seed)
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+/** 把整數陣列的總和逐格 ±1 收斂到 target(受 lo/hi 夾限),讓設備台數精確對上檯面數字 */
+function popReconcile(vals: number[], target: number, lo: (i: number) => number, hi: (i: number) => number): void {
+  let d = target - vals.reduce((s, v) => s + v, 0)
+  for (let pass = 0; d !== 0 && pass < 60; pass++) {
+    for (let i = 0; i < vals.length && d !== 0; i++) {
+      if (d > 0 && vals[i] < hi(i)) { vals[i]++; d-- }
+      else if (d < 0 && vals[i] > lo(i)) { vals[i]--; d++ }
+    }
+  }
+}
+
+function buildPopulation(): FieldRecord[] {
+  const curated = FIELDS_A_FULL
+  const countBy = <T extends string>(pickKey: (f: FieldRecord) => T): Record<string, number> => {
+    const acc: Record<string, number> = {}
+    for (const f of curated) acc[pickKey(f)] = (acc[pickKey(f)] ?? 0) + 1
+    return acc
+  }
+  const catTarget = Object.fromEntries(CATEGORY_DIST.map((d) => [d.id, d.n])) as Record<CatId, number>
+  const regionTarget = Object.fromEntries(REGION_HEALTH.map((r) => [r.r, r.n])) as Record<string, number>
+  const typeTarget = Object.fromEntries(SITE_TYPES.map((t) => [t.nm, t.n])) as Record<string, number>
+
+  const cats = popShuffle(popSequence(catTarget, countBy((f) => f.cat)), 20260903)
+  const regions = popShuffle(popSequence(regionTarget, countBy((f) => regionOfName(f.nm))), 20260904)
+  const types = popShuffle(popSequence(typeTarget, countBy((f) => f.type)), 20260905)
+
+  const rows: FieldRecord[] = cats.map((cat, i) => {
+    const rnd = mulberry32(0x5EED + i * 2654435761)
+    const b = POP_BAND[cat]
+    const span = (x: [number, number]) => x[0] + rnd() * (x[1] - x[0])
+    const r1 = (v: number) => Math.round(v * 10) / 10
+    const weighted = <T>(w: [T, number][]) => { const r = rnd(); let a = 0; for (const [v, p] of w) { a += p; if (r < a) return v } return w[w.length - 1][0] }
+
+    const region = regions[i], type = types[i]
+    const dz = REGION_DISTRICTS[region]
+    const dist = dz[Math.floor(rnd() * dz.length)]
+    /* 少數場域有明顯 PM2.5 事件 —— 沒有這條尾巴,PM2.5 區間篩選會全塞在同一格 */
+    const spike = rnd()
+    const pm = r1(span(b.pm) * (spike < 0.035 ? 5 + rnd() * 6 : 1))
+    const dry = rnd()   // 過乾場域,對齊 HUMIDITY_DIST 的 1.4%
+    const humidity = r1(dry < 0.014 ? 33 + rnd() * 7 : span(b.hum))
+    const devTotal = 1 + Math.floor(rnd() * 6)     // 之後由 popReconcile 收斂到 Σ = 4,832
+    const roll = rnd()
+    const power: PowerState = roll < 0.035 ? '離線' : roll < 0.08 ? '關機' : '開機'
+    const q = Math.round(span(b.q))
+    const minPct = Math.round(cat === '6' ? 6 + rnd() * 20 : cat === '4' || cat === '5' ? 15 + rnd() * 28 : 30 + rnd() * 55)
+    const seq = String(i + 1).padStart(4, '0')
+    return {
+      nm: `${REGION_PREFIX[region]}${dist}${type}`,
+      id: `SH-${7000 + i}`,
+      customerId: `C2099${seq.padStart(6, '0')}`,
+      customerName: `示範客戶 ${seq}`,
+      addr: `${distAddr(dist)}${ROADS[Math.floor(rnd() * ROADS.length)]}${SECTIONS[Math.floor(rnd() * SECTIONS.length)]}`,
+      type,
+      sz: 20 + Math.floor(rnd() * 160),
+      dev: '',                                     // 下方由 devOnline/devTotal 補
+      lamp: q >= 75 ? 'g' : q >= 60 ? 'y' : 'r',
+      q,
+      pm,
+      co2: 500 + Math.floor(rnd() * 700),
+      mem: `示範客戶 ${seq}`,
+      tier: rnd() < 0.18 ? 'g' : '',
+      cat,
+      hrs: r1(6 + rnd() * 16),
+      minPct,
+      predictedDays: Math.max(1, Math.round(minPct * (1.2 + rnd() * 1.1))),
+      model: weighted(MODEL_WEIGHT),
+      power,
+      mode: weighted(MODE_WEIGHT),
+      humidity,
+      temp: r1(span(b.temp)),
+      devTotal,
+      devOnline: power === '開機' ? devTotal : 0,
+      urgentParts: 0,
+      alarmDevices: 0,
+    }
+  })
+
+  // 設備台數收斂到檯面數字,字卡才對得上 TODAY_POWER_ON
+  const curTotal = curated.reduce((s, f) => s + f.devTotal, 0)
+  const curOnline = curated.reduce((s, f) => s + f.devOnline, 0)
+  const dt = rows.map((r) => r.devTotal)
+  popReconcile(dt, TODAY_POWER_ON.total - curTotal, () => 1, () => 8)
+  rows.forEach((r, i) => {
+    r.devTotal = dt[i]
+    if (r.power === '開機') r.devOnline = Math.min(r.devOnline, r.devTotal)
+  })
+  const on = rows.map((r) => r.devOnline)
+  popReconcile(on, TODAY_POWER_ON.active - curOnline,
+    (i) => (rows[i].power === '開機' ? 1 : 0),
+    (i) => (rows[i].power === '開機' ? rows[i].devTotal : 0))
+  rows.forEach((r, i) => {
+    r.devOnline = on[i]
+    r.dev = `${r.devOnline}/${r.devTotal}`
+    /* 耗材與警報由該場域的殘量與燈號推,不另外亂灑,才不會出現「全綠燈卻一堆警報」 */
+    r.urgentParts = r.minPct < 20 ? Math.max(1, Math.round(r.devTotal * 0.5)) : r.minPct < 30 && r.devTotal >= 3 ? 1 : 0
+    r.alarmDevices = r.lamp === 'r' ? Math.max(1, Math.round(r.devTotal * 0.4)) : r.lamp === 'y' && r.minPct < 25 ? 1 : 0
+  })
+  return rows
+}
+
+/** 依場域名推區域,對應 REGION_HEALTH.r。與 ModuleA 的區域熱圖共用同一份判斷。 */
+export function regionOfName(nm: string): string {
+  if (nm.startsWith('臺北') || nm.startsWith('台北')) return '臺北市'
+  if (nm.startsWith('新北')) return '新北市'
+  if (nm.startsWith('桃園')) return '桃園市'
+  if (nm.startsWith('新竹')) return '新竹縣市'
+  if (nm.startsWith('臺中') || nm.startsWith('台中')) return '臺中市'
+  if (nm.startsWith('臺南') || nm.startsWith('台南')) return '臺南市'
+  if (nm.startsWith('高雄')) return '高雄市'
+  return '其他'
+}
+
+/** 設備總覽的完整母體:12 筆既有列 + 1,272 筆生成列 = 1,284 場域 / 4,832 台。 */
+export const FIELDS_A_POP: FieldRecord[] = [...FIELDS_A_FULL, ...buildPopulation()]
 
 export const MONTHS_12 = ['06', '07', '08', '09', '10', '11', '12', '01', '02', '03', '04', '05']
 export const AHI_TREND = [76.4, 77.2, 77.8, 78.4, 79.1, 80.2, 79.6, 80.4, 80.8, 81.2, 81.0, 81.4]
@@ -893,7 +1136,7 @@ export const FIELD_DETAIL_C88 = DEVICE_FIELD_DETAILS[0]
 export function getFieldDetail(fid: string): FieldDetail {
   const real = FIELD_DETAILS[fid]
   if (real) return real                       // 有完整資料的場域(目前只有三台真實設備 + SH-2841)
-  const rec = FIELDS_A_FULL.find((f) => f.id === fid)
+  const rec = FIELDS_A_POP.find((f) => f.id === fid)
   if (!rec) return FIELD_DETAIL_C88
   /* 總分跟著該場域的 q 走,並回推兩項組成,避免詳情頁分數與清單/整體層打架。
    * 兩項都必須落在 0–100 且平均等於 total:PM2.5 取 min(100, total+8),濕度補足差額。
@@ -921,8 +1164,8 @@ export function getFieldDetail(fid: string): FieldDetail {
       outdoorPm25Avg: FIELD_OUTDOOR_PM25[rec.id] ?? FIELD_DETAIL_C88.airScore.outdoorPm25Avg,
     },
     pm25Now: rec.pm,
-    onlineDevices: parseInt(rec.dev.split('/')[0]),
-    totalDevices: parseInt(rec.dev.split('/')[1]),
+    onlineDevices: rec.devOnline,
+    totalDevices: rec.devTotal,
     hoursToday: rec.hrs,
   }
 }
