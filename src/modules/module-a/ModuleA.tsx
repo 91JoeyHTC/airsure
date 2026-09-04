@@ -48,8 +48,14 @@ import {
   activeFilterCount,
   computeAirQualityDist,
   computeHumidityDist,
+  computeUsageDist,
+  computePowerDist,
+  computeModeDist,
+  FAN_SPEED_DIST,
+  FAN_SPEED_SOURCE,
   type OverviewFilters,
   type TierCount,
+  type DonutSlice,
 } from '../../mocks/module-a-overview'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
 import type { DeviceReport } from '../../mocks/devices'
@@ -167,6 +173,122 @@ function TierDistCard({ icon, title, sub, headline, tiers, catMeta, batch }: {
   )
 }
 
+/* 甜甜圈分布卡(設備使用四張)。左環右圖例表,圖例同時就是資料表 ——
+ * 顏色不是唯一的識別管道,色盲或列印時仍讀得到標籤與數值。
+ * 色盤 VIZ_SERIES 已跑過 dataviz 驗證器(見 mocks/module-a-overview.ts),
+ * 順序固定;超過 7 類一律折進「其他」,不再生第 8 個色。 */
+function DonutCard({ title, sub, note, slices, unit, batch }: {
+  title: string
+  sub: string
+  /** 卡片右上的來源/口徑說明 */
+  note?: string
+  slices: DonutSlice[]
+  unit: string
+  batch: string
+}) {
+  const [hover, setHover] = useState<string | null>(null)
+  const R = 54, W = 20
+  const C = 2 * Math.PI * R
+  /* 段與段之間留 2px 底色縫,相鄰色塊才不會黏成一片 */
+  const gap = (2 / C) * 100
+  const total = slices.reduce((n, x) => n + x.n, 0)
+  const active = slices.find((x) => x.k === hover) ?? null
+
+  /* 位移由前面各段的累計算出,不在 map 裡累加變數 —— 跨 render 改寫閉包變數
+     會被 React compiler 擋下,而且切片數最多 8 個,重算成本可以忽略。 */
+  const arcs = slices.map((x, i) => {
+    const len = total === 0 ? 0 : (x.n / total) * 100
+    const before = slices.slice(0, i).reduce((n, y) => n + y.n, 0)
+    return { ...x, len: Math.max(0, len - gap), offset: total === 0 ? 0 : (before / total) * 100 }
+  })
+
+  return (
+    <div className="card" {...batchAttrs(batch)}>
+      <div className="ch">
+        <div>
+          <h3>{title}</h3>
+          <div className="csub">{sub}</div>
+        </div>
+        {note && <span style={{ fontSize: 10, color: 'var(--as-mute)', textAlign: 'right', maxWidth: 190 }}>{note}</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 18, alignItems: 'center', marginTop: 8 }}>
+        <div style={{ position: 'relative', flex: 'none', width: 150, height: 150 }}>
+          <svg viewBox="0 0 150 150" width="150" height="150" role="img" aria-label={title}>
+            <circle cx="75" cy="75" r={R} fill="none" stroke="var(--as-line-2)" strokeWidth={W} />
+            {arcs.map((a) => (
+              <circle
+                key={a.k}
+                cx="75" cy="75" r={R} fill="none"
+                stroke={a.color}
+                strokeWidth={hover === a.k ? W + 5 : W}
+                pathLength={100}
+                strokeDasharray={`${a.len} ${100 - a.len}`}
+                strokeDashoffset={-a.offset}
+                transform="rotate(-90 75 75)"
+                style={{ transition: 'stroke-width .12s', cursor: 'pointer', opacity: hover && hover !== a.k ? 0.35 : 1 }}
+                onMouseEnter={() => setHover(a.k)}
+                onMouseLeave={() => setHover(null)}
+              >
+                <title>{`${a.label} ${a.n.toLocaleString()} ${unit} (${a.pct}%)`}</title>
+              </circle>
+            ))}
+          </svg>
+          {/* 中心讀數:平常是總數,滑到某一段時換成該段 —— 甜甜圈的中心不該空著 */}
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', textAlign: 'center',
+          }}>
+            <div className="mono" style={{ fontSize: 20, fontWeight: 600, color: 'var(--as-ink)', lineHeight: 1.1 }}>
+              {(active ? active.n : total).toLocaleString()}
+              <span style={{ fontSize: 10, color: 'var(--as-mute)', fontWeight: 400, marginLeft: 2 }}>{unit}</span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 2, maxWidth: 96, lineHeight: 1.25 }}>
+              {active ? `${active.label} · ${active.pct}%` : '合計'}
+            </div>
+          </div>
+        </div>
+
+        {/* 圖例即資料表 */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0 10px',
+            fontSize: 10, color: 'var(--as-mute)', paddingBottom: 4,
+            borderBottom: '1px solid var(--as-line-2)',
+          }}>
+            <span></span><span style={{ textAlign: 'right' }}>設備數</span><span style={{ textAlign: 'right', width: 44 }}>佔比</span>
+          </div>
+          {slices.map((x) => (
+            <div
+              key={x.k}
+              onMouseEnter={() => setHover(x.k)}
+              onMouseLeave={() => setHover(null)}
+              style={{
+                display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0 10px',
+                alignItems: 'center', padding: '4px 4px', margin: '0 -4px', borderRadius: 4,
+                background: hover === x.k ? 'var(--as-bg)' : 'transparent', cursor: 'pointer',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: x.color, flex: 'none' }} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--as-ink-2)', fontWeight: 600 }}>{x.label}</span>
+                  {x.sub && <span style={{ display: 'block', fontSize: 9.5, color: 'var(--as-mute)', lineHeight: 1.3 }}>{x.sub}</span>}
+                </span>
+              </span>
+              <span className="mono" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--as-ink)', textAlign: 'right' }}>
+                {x.n.toLocaleString()}
+              </span>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--as-mute)', textAlign: 'right', width: 44 }}>
+                {x.pct}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* KPI 字卡。七張同一個形狀,值一律由 computeOverviewKpi 算好才傳進來 —— 元件不做計算。 */
 function OvKpi({ tone, lbl, val, unit, foot, footTone = '', spark, sparkColor }: {
   tone: 'green' | 'purple' | 'orange' | 'red'
@@ -232,6 +354,9 @@ function AOverview({
   const upsellCount = (cid: CatId) => rows.filter((f) => f.cat === cid).length
   const airTiers = useMemo(() => computeAirQualityDist(rows, filters.range), [rows, filters.range])
   const humTiers = useMemo(() => computeHumidityDist(rows, filters.range), [rows, filters.range])
+  const usageDist = useMemo(() => computeUsageDist(rows), [rows])
+  const powerDist = useMemo(() => computePowerDist(rows), [rows])
+  const modeDist = useMemo(() => computeModeDist(rows), [rows])
 
   const pageCount = Math.max(1, Math.ceil(rows.length / OVERVIEW_PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
@@ -505,6 +630,35 @@ function AOverview({
             })}
           </div>
         </div>
+      </div>
+
+      {/* 設備使用相關(第五屏)—— 一列兩張。
+          前三張由母體即時算,總數對齊「連網設備數」;風速母體沒有欄位,先用中台快照。 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginTop: 16 }}>
+        <DonutCard
+          batch="A.設備總覽.使用強度分布" title="使用強度分布" unit="台"
+          sub={`日均運轉時數 · ${activeCount > 0 ? '目前條件' : '全部'} ${kpi.devices.toLocaleString()} 台`}
+          note="門檻沿用分群層「依使用強度」"
+          slices={usageDist}
+        />
+        <DonutCard
+          batch="A.設備總覽.電源狀態分布" title="電源狀態分布" unit="台"
+          sub={`開機 / 關機 / 水箱滿 · ${kpi.devices.toLocaleString()} 台`}
+          note="三態合計 = 連網設備數"
+          slices={powerDist}
+        />
+        <DonutCard
+          batch="A.設備總覽.運轉模式分布" title="運轉模式分布" unit="台"
+          sub={`場域主要模式 · 以開機台數加權 · ${kpi.devices.toLocaleString()} 台`}
+          note="未運轉台數歸「關機」"
+          slices={modeDist}
+        />
+        <DonutCard
+          batch="A.設備總覽.風速分布" title="風速分布" unit="台"
+          sub={`風速 0–9 級 · ${FAN_SPEED_SOURCE.devices.toLocaleString()} 台`}
+          note={`示範值 · 來源 ${FAN_SPEED_SOURCE.label},母體與本頁 ${kpi.devices.toLocaleString()} 台不同 · 不受篩選影響`}
+          slices={FAN_SPEED_DIST}
+        />
       </div>
 
       {/* 建議聯繫客戶(原 upsell 機會池;2026-05-29 依 PDF 改名 + 卡片點擊跳場域清單篩類別) */}
@@ -952,10 +1106,12 @@ function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
     <>
       {/* 分群層 hero 已依 2026-05-29 PDF 拉掉 */}
 
-      {/* 2 欄 grid:分群卡 × 3 / 場域類型分佈。
-          空氣品質與濕度控制兩張卡於 2026-09-03 移到「設備總覽」,與七分群分布同頁對照。 */}
+      {/* 2 欄 grid:分群卡 × 2(耗材 / 水箱)/ 場域類型分佈。
+          空氣品質、濕度控制與使用強度三張卡於 2026-09-03 移到「設備總覽」。 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
-        {SEGMENTS_A.map((s, si) => (
+        {/* 「依使用強度」(index 1)於 2026-09-03 移到設備總覽的設備使用四卡,
+            這裡不再重複一張;si 仍是 SEGMENTS_A 的原始索引,fieldGroupIndex 才對得上。 */}
+        {SEGMENTS_A.map((s, si) => ({ s, si })).filter(({ si }) => si !== 1).map(({ s, si }) => (
           <div className="seg-card" key={s.title}>
             <div className="sg-h">
               <div>

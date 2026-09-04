@@ -279,3 +279,97 @@ export function computeAirQualityDist(rows: FieldRecord[], range: TimeRange): Ti
 export function computeHumidityDist(rows: FieldRecord[], range: TimeRange): TierCount[] {
   return tally(rows, range, HUMIDITY_DIST, (m) => m.humidity)
 }
+
+/* ── 設備使用相關(第五屏)的四張分布 ────────────────────────────────────
+ * 使用強度 / 電源狀態 / 運轉模式由母體即時算,總數對齊「連網設備數 4,832 台」;
+ * 風速母體沒有欄位,先用中台儀表板快照的數字寫死(卡片上會標明來源與母體差異)。 */
+
+/** 類別色盤。以 AirSure 品牌三色為基底延伸,並跑過 dataviz 驗證器:
+ *  node scripts/validate_palette.js "#0D9488,#D97706,#4F46E5,#DC2626,#0284C7,#EA580C,#7C3AED"
+ *    --mode light --surface "#FFFFFF"   → 亮度帶 / 色度下限 / CVD 分離 / 一般視覺 / 對比 全數 PASS
+ *  順序固定,不得循環使用;第 8 個類別一律折進「其他」而不是再生一個色。 */
+export const VIZ_SERIES = ['#0D9488', '#D97706', '#4F46E5', '#DC2626', '#0284C7', '#EA580C', '#7C3AED']
+/** 「關機 / 關閉 / 其他」這類非類別的退位色,刻意低彩度,不佔類別色位 */
+export const VIZ_MUTED = '#9CA3AF'
+
+export interface DonutSlice {
+  k: string
+  label: string
+  /** 圖例第二行(級距、RPM、折疊進來的項目…) */
+  sub?: string
+  n: number
+  pct: number
+  color: string
+}
+
+const withPct = (raw: { k: string; label: string; sub?: string; n: number; color: string }[]): DonutSlice[] => {
+  const total = raw.reduce((s, x) => s + x.n, 0)
+  return raw.map((x) => ({ ...x, pct: total === 0 ? 0 : Math.round((x.n / total) * 1000) / 10 }))
+}
+
+/* ① 使用強度 —— 門檻沿用分群層 SEGMENTS_A「依使用強度」的 traits 敘述。
+ * 母體的 hrs 為 6–22h 均勻分布,依此門檻切出來剛好接近 25 / 50 / 25 的百分位框架。 */
+export const USAGE_BANDS: { k: string; label: string; sub: string; action: string; lo: number; hi: number }[] = [
+  { k: 'heavy', label: '重度', sub: '日均 > 18h · 高度依賴', action: '推薦長效濾網 / 升級 Pro 機型', lo: 18, hi: Infinity },
+  { k: 'mid',   label: '中度', sub: '日均 10–18h · 穩定使用', action: '維持基本服務 / 月度報告',       lo: 10, hi: 18 },
+  { k: 'light', label: '輕度', sub: '日均 < 10h · 部分閒置',  action: '推送喚醒任務 / LINE 提醒',      lo: 0,  hi: 10 },
+]
+
+export function computeUsageDist(rows: FieldRecord[]): DonutSlice[] {
+  return withPct(USAGE_BANDS.map((b, i) => ({
+    k: b.k, label: b.label, sub: b.sub, color: VIZ_SERIES[i],
+    n: rows.filter((f) => f.hrs > b.lo && f.hrs <= b.hi).reduce((s, f) => s + f.devTotal, 0),
+  })))
+}
+
+/* ② 電源狀態 —— 三態合計必然等於 devTotal,不會出現對不上的殘數。 */
+export function computePowerDist(rows: FieldRecord[]): DonutSlice[] {
+  const sum = (f: (r: FieldRecord) => number) => rows.reduce((s, r) => s + f(r), 0)
+  const on = sum((r) => r.devOnline)
+  const tank = sum((r) => r.devTankFull)
+  const off = sum((r) => r.devTotal) - on - tank
+  return withPct([
+    { k: 'on',   label: '開機',   sub: '今日有運轉',       n: on,   color: VIZ_SERIES[0] },
+    { k: 'off',  label: '關機',   sub: '連網但今日未運轉', n: off,  color: VIZ_MUTED },
+    { k: 'tank', label: '水箱滿', sub: '水滿停機 · 待倒水', n: tank, color: VIZ_SERIES[1] },
+  ])
+}
+
+/* ③ 運轉模式 —— 未運轉的台數歸「關機」,其餘依該場域的主要模式,以開機台數加權。 */
+export function computeModeDist(rows: FieldRecord[]): DonutSlice[] {
+  const idle = rows.reduce((s, r) => s + (r.devTotal - r.devOnline), 0)
+  const byMode = USAGE_MODES.map((m, i) => ({
+    k: m, label: m, sub: MODE_HINT[m], color: VIZ_SERIES[i],
+    n: rows.filter((f) => f.mode === m).reduce((s, f) => s + f.devOnline, 0),
+  }))
+  return withPct([
+    { k: 'off', label: '關機', sub: '未運轉', n: idle, color: VIZ_MUTED },
+    ...byMode,
+  ].filter((x) => x.n > 0 || x.k === 'off'))
+}
+
+const MODE_HINT: Record<UsageMode, string> = {
+  雙智慧: 'AUTO · PM2.5 自動 + 濕度連動',
+  清淨智慧: 'CLEAN · 純清淨',
+  除濕智慧: 'DEHUMIDIFY · 980 RPM 除濕強',
+  手動風量: '使用者指定風速',
+  睡眠: '固定最小風',
+  除臭: '120 分鐘 Turbo',
+}
+
+/* ④ 風速 —— 母體沒有風速欄位(FieldRecord 不帶 fanSpeed),先用中台儀表板的快照寫死。
+ * 母體 3,570 台與本頁的 4,832 台不同,卡片上會標明,不假裝是同一份數字。
+ * 原始 10 級折成 7 段:退位灰(關閉)+ 6 個類別色。尾端四級(4 強風 104 / 3 大風 60 /
+ * 6 除濕大 21 / 8 除臭風量 13)併為「其他風速」—— 甜甜圈超過 6–7 段就開始分不出來,
+ * 折疊比多生兩個辨識不了的顏色誠實;折進去的四級在圖例第二行仍逐項列出,數字沒有消失。 */
+export const FAN_SPEED_SOURCE = { label: '中台儀表板快照', devices: 3570 }
+
+export const FAN_SPEED_DIST: DonutSlice[] = withPct([
+  { k: 'f0', label: '0 關閉/停止', sub: '未送風',            n: 1630, color: VIZ_MUTED },
+  { k: 'f1', label: '1 小風',      sub: '低風量',            n:  755, color: VIZ_SERIES[0] },
+  { k: 'f5', label: '5 除濕強',    sub: '980 RPM',           n:  499, color: VIZ_SERIES[1] },
+  { k: 'f7', label: '7 除濕中',    sub: '750 RPM',           n:  201, color: VIZ_SERIES[2] },
+  { k: 'f9', label: '9 睡眠',      sub: '固定最小風',        n:  170, color: VIZ_SERIES[3] },
+  { k: 'f2', label: '2 中風',      sub: '中風量',            n:  117, color: VIZ_SERIES[4] },
+  { k: 'fx', label: '其他風速',    sub: '4 強風 104 · 3 大風 60 · 6 除濕大 21 · 8 除臭風量 13', n: 198, color: VIZ_SERIES[5] },
+])
