@@ -143,15 +143,19 @@ export interface OverviewFilters {
   range: TimeRange
   /** 由區域熱圖點擊帶入,與六個下拉以 AND 結合 */
   region: string | null
+  /** 由預警卡的「顯示名單」帶入:只看當前有警報 / 期間內曾警報的場域 */
+  alarmScope: 'all' | 'now' | 'period'
 }
 
 export const DEFAULT_FILTERS: OverviewFilters = {
   model: ALL, power: ALL, mode: ALL, pm: ALL, humidity: ALL, range: DEFAULT_RANGE, region: null,
+  alarmScope: 'all',
 }
 
 /** 已套用的篩選項數(時間區間不算,它永遠有值) */
 export function activeFilterCount(f: OverviewFilters): number {
-  return [f.model, f.power, f.mode, f.pm, f.humidity].filter((v) => v !== ALL).length + (f.region ? 1 : 0)
+  return [f.model, f.power, f.mode, f.pm, f.humidity].filter((v) => v !== ALL).length
+    + (f.region ? 1 : 0) + (f.alarmScope !== 'all' ? 1 : 0)
 }
 
 export const FILTER_OPTIONS = {
@@ -167,6 +171,8 @@ export function filterFields(filters: OverviewFilters, pop: FieldRecord[] = FIEL
     if (filters.power !== ALL && f.power !== filters.power) return false
     if (filters.mode !== ALL && f.mode !== filters.mode) return false
     if (filters.region && regionOfName(f.nm) !== filters.region) return false
+    if (filters.alarmScope === 'now' && f.alarmDevices === 0) return false
+    if (filters.alarmScope === 'period' && alarmsInPeriod(f, filters.range) === 0) return false
     if (filters.pm === ALL && filters.humidity === ALL) return true
     const m = metricsFor(f, filters.range)
     if (filters.pm !== ALL && !inBucket(m.pm, PM_BUCKETS, filters.pm)) return false
@@ -373,3 +379,211 @@ export const FAN_SPEED_DIST: DonutSlice[] = withPct([
   { k: 'f2', label: '2 中風',      sub: '中風量',            n:  117, color: VIZ_SERIES[4] },
   { k: 'fx', label: '其他風速',    sub: '4 強風 104 · 3 大風 60 · 6 除濕大 21 · 8 除臭風量 13', n: 198, color: VIZ_SERIES[5] },
 ])
+
+/* ── 耗材相關(第六屏)的三張分布 ────────────────────────────────────────
+ * 三張都由母體算,沒有寫死的數字:
+ *   耗材壽命    ← 各類剩餘天數 = 更換週期 × 剩餘 %
+ *   更換週期    ← 容量時數 ÷ 日均運轉時數(hrs)
+ *   處理時機    ← minPct 的四級門檻(沿用分群層「依耗材剩餘壽命」)
+ * 全部以 devTotal 加權,合計等於「連網設備數」。 */
+
+/** 三類耗材。容量時數取自 CONSUMABLE_SPEC(前置 2232 / ECF 4380 / HEPA 8760)。 */
+export const PART_SPEC = [
+  { k: 'pre',  label: '初濾',    sub: '前置濾網 · 2,232 h', capHours: 2232 },
+  { k: 'mid',  label: '中堅',    sub: 'ECF 靜電集塵 · 4,380 h', capHours: 4380 },
+  { k: 'hepa', label: '後 HEPA', sub: 'HEPA 主濾網 · 8,760 h', capHours: 8760 },
+] as const
+
+/* 有極性的順序色階(近到期 → 充裕)。跑過 dataviz 驗證器:
+ *   node scripts/validate_palette.js "#B91C1C,#D97706,#0284C7,#7C3AED,#16A34A"
+ *     --mode light --surface "#FFFFFF"  → 全數 PASS
+ * 兩張卡共用同一組,最長／最充裕的那一格永遠是綠色。 */
+export const LIFE_SCALE = ['#B91C1C', '#D97706', '#0284C7', '#7C3AED', '#16A34A']
+
+export interface PartState {
+  k: string
+  label: string
+  sub: string
+  /** 剩餘 % */
+  pct: number
+  /** 該場域這一類的更換週期(天)= 容量時數 ÷ 日均運轉時數 */
+  cycleDays: number
+  /** 剩餘天數 = 週期 × 剩餘 % */
+  remainDays: number
+}
+
+/** 由 minPct 與 hrs 推三類耗材的狀態。
+ *  最短命的初濾就是該場域的 minPct(真實報告裡前置濾網也確實是最先見底的那件);
+ *  壽命越長的件剩得越多,位移由場域 id 決定,同一場域每次都一樣。 */
+export function partsOf(f: FieldRecord): PartState[] {
+  const j = (jitterOf(f.id) + 1) / 2          // 0–1
+  const pcts = [f.minPct, f.minPct + 14 + j * 26, f.minPct + 28 + j * 42]
+  return PART_SPEC.map((p, i) => {
+    const pct = Math.min(100, Math.max(0, Math.round(pcts[i])))
+    const cycleDays = p.capHours / Math.max(1, f.hrs)
+    return { k: p.k, label: p.label, sub: p.sub, pct, cycleDays, remainDays: (cycleDays * pct) / 100 }
+  })
+}
+
+export interface StackRow {
+  k: string
+  label: string
+  sub: string
+  total: number
+  segs: { k: string; label: string; n: number; pct: number; color: string }[]
+}
+
+const bucketize = (
+  rows: FieldRecord[],
+  partIndex: number,
+  bands: { k: string; label: string; lo: number; hi: number }[],
+  pick: (p: PartState) => number,
+  colors: string[],
+): StackRow['segs'] => {
+  const hit = bands.map(() => 0)
+  for (const f of rows) {
+    const v = pick(partsOf(f)[partIndex])
+    const i = bands.findIndex((b) => v > b.lo && v <= b.hi)
+    if (i >= 0) hit[i] += f.devTotal
+  }
+  const total = hit.reduce((a, b) => a + b, 0)
+  return bands.map((b, i) => ({
+    k: b.k, label: b.label, n: hit[i],
+    pct: total === 0 ? 0 : Math.round((hit[i] / total) * 1000) / 10,
+    color: colors[i],
+  }))
+}
+
+/* ① 耗材壽命(時間)分布 —— 三類共用同一組剩餘天數桶 */
+const LIFE_BANDS = [
+  { k: 'l0', label: '已過期',    lo: -Infinity, hi: 0 },
+  { k: 'l1', label: '30 天內',   lo: 0,   hi: 30 },
+  { k: 'l2', label: '30–90 天',  lo: 30,  hi: 90 },
+  { k: 'l3', label: '90–180 天', lo: 90,  hi: 180 },
+  { k: 'l4', label: '180 天以上', lo: 180, hi: Infinity },
+]
+
+export const LIFE_LEGEND = LIFE_BANDS.map((b, i) => ({ k: b.k, label: b.label, color: LIFE_SCALE[i] }))
+
+export function computePartLifeDist(rows: FieldRecord[]): StackRow[] {
+  return PART_SPEC.map((p, i) => {
+    const segs = bucketize(rows, i, LIFE_BANDS, (x) => x.remainDays, LIFE_SCALE)
+    return { k: p.k, label: p.label, sub: p.sub, total: segs.reduce((a, b) => a + b.n, 0), segs }
+  })
+}
+
+/* ② 濾網更換週期分析 —— 每類的級距不同(初濾 4 級、中堅與 HEPA 5 級),
+ * 所以圖例畫在各自那一條下面。最長的一格一律用色階最後一色,三條讀起來才一致。 */
+const CYCLE_BANDS: Record<string, { k: string; label: string; lo: number; hi: number }[]> = {
+  pre: [
+    { k: 'c0', label: '3 個月內', lo: -Infinity, hi: 90 },
+    { k: 'c1', label: '3–6 個月', lo: 90,  hi: 180 },
+    { k: 'c2', label: '6–12 個月', lo: 180, hi: 365 },
+    { k: 'c3', label: '1 年以上',  lo: 365, hi: Infinity },
+  ],
+  mid: [
+    { k: 'c0', label: '半年內',    lo: -Infinity, hi: 180 },
+    { k: 'c1', label: '半年–1 年', lo: 180, hi: 365 },
+    { k: 'c2', label: '1–1.5 年',  lo: 365, hi: 548 },
+    { k: 'c3', label: '1.5–2 年',  lo: 548, hi: 730 },
+    { k: 'c4', label: '2 年以上',  lo: 730, hi: Infinity },
+  ],
+  hepa: [
+    { k: 'c0', label: '半年內',    lo: -Infinity, hi: 180 },
+    { k: 'c1', label: '半年–1 年', lo: 180, hi: 365 },
+    { k: 'c2', label: '1–1.5 年',  lo: 365, hi: 548 },
+    { k: 'c3', label: '1.5–2 年',  lo: 548, hi: 730 },
+    { k: 'c4', label: '2 年以上',  lo: 730, hi: Infinity },
+  ],
+}
+/** 4 級時跳過色階第 4 色,讓「最長」那一格仍是綠色 */
+const CYCLE_COLORS: Record<number, string[]> = {
+  4: [LIFE_SCALE[0], LIFE_SCALE[1], LIFE_SCALE[2], LIFE_SCALE[4]],
+  5: LIFE_SCALE,
+}
+
+export function computePartCycleDist(rows: FieldRecord[]): StackRow[] {
+  return PART_SPEC.map((p, i) => {
+    const bands = CYCLE_BANDS[p.k]
+    const segs = bucketize(rows, i, bands, (x) => x.cycleDays, CYCLE_COLORS[bands.length])
+    return { k: p.k, label: p.label, sub: p.sub, total: segs.reduce((a, b) => a + b.n, 0), segs }
+  })
+}
+
+/* ③ 處理時機 —— 門檻與行動文案沿用分群層「依耗材剩餘壽命」,數字改由母體算。 */
+export interface ServiceTier {
+  k: string
+  label: string
+  traits: string
+  action: string
+  color: string
+  n: number
+  pct: number
+}
+
+const SERVICE_TIERS = [
+  { k: 'now',   label: '立即處理 (< 20% · 7 天內)',   lo: -Infinity, hi: 20, color: 'var(--as-danger)',
+    traits: 'ECF/HEPA 已過警戒 · 影響淨化效果', action: '批次派工 + 推送自動配送訂閱' },
+  { k: 'soon',  label: '近期處理 (20–30% · 30 天內)', lo: 20, hi: 30, color: 'var(--as-warning)',
+    traits: '進入更換倒數 · 平均 18 天', action: '主動推送耗材自動配送 + 寄出更換提醒' },
+  { k: 'watch', label: '持續觀察 (30–50% · 本季內)',  lo: 30, hi: 50, color: '#4F46E5',
+    traits: '本季內需處理 · 可預先排程', action: '排程到府保養 + 韌體升級' },
+  { k: 'ok',    label: '充足 (≥ 50% · 下季)',         lo: 50, hi: Infinity, color: 'var(--as-success)',
+    traits: '濾網準時 · 主動採納建議高', action: '推薦升級訂閱 / 加入健康證書計畫' },
+]
+
+export function computeServiceTiming(rows: FieldRecord[]): ServiceTier[] {
+  const hit = SERVICE_TIERS.map(() => 0)
+  for (const f of rows) {
+    const i = SERVICE_TIERS.findIndex((t) => f.minPct >= t.lo && f.minPct < t.hi)
+    if (i >= 0) hit[i] += f.devTotal
+  }
+  const total = hit.reduce((a, b) => a + b, 0)
+  return SERVICE_TIERS.map((t, i) => ({
+    k: t.k, label: t.label, traits: t.traits, action: t.action, color: t.color,
+    n: hit[i], pct: total === 0 ? 0 : Math.round((hit[i] / total) * 1000) / 10,
+  }))
+}
+
+/* ── 預警相關(第七屏) ──────────────────────────────────────────────────
+ * 當前 / 時間範圍內兩個數字由母體算;警報代碼分布母體沒有(報告只有 lastAlarmCode,
+ * 三台都是 0,沒有逐筆碼別),照中台儀表板快照寫死並在卡上標明。 */
+
+/** 期間內曾警報的台數。區間越短、命中的越少;當前警報必然落在任何區間內,故取下限。
+ *  小數部分用場域 id 決定性進位,不能直接四捨五入 —— 每列的 alarmPeriod 只有 1–3 台,
+ *  乘 0.16 後全部捨成 0,近 7 天的總數會塌回「當前警報」而不是真的少一點。 */
+export function alarmsInPeriod(f: FieldRecord, range: TimeRange): number {
+  const k = range === '7d' ? 0.16 : range === '30d' ? 0.45 : 1
+  const scaled = f.alarmPeriod * k
+  const base = Math.floor(scaled)
+  const carry = (jitterOf(f.id) + 1) / 2 < scaled - base ? 1 : 0
+  return Math.max(f.alarmDevices, base + carry)
+}
+
+export interface AlarmKpi {
+  /** 當前有未解除警報的設備數 */
+  now: number
+  /** 選定時間區間內曾出現警報的設備數 */
+  period: number
+  /** 佔母體設備數的比例 % */
+  periodPct: number
+}
+
+export function computeAlarmKpi(rows: FieldRecord[], range: TimeRange): AlarmKpi {
+  const now = rows.reduce((s, f) => s + f.alarmDevices, 0)
+  const period = rows.reduce((s, f) => s + alarmsInPeriod(f, range), 0)
+  const devices = rows.reduce((s, f) => s + f.devTotal, 0)
+  return { now, period, periodPct: devices === 0 ? 0 : Math.round((period / devices) * 1000) / 10 }
+}
+
+/* 警報代碼分布。母體沒有碼別維度(報告的 meta.lastAlarmCode 三台皆為 0),
+ * 先用中台儀表板快照的數字;合計 97 台與本頁的當前/期間數字都不同,卡上會標明。 */
+export const ALARM_CODE_SOURCE = { label: '中台儀表板快照', devices: 97 }
+
+export const ALARM_CODES: { k: string; code: string; label: string; n: number; color: string }[] = [
+  { k: 'e2',  code: 'E2',  label: '電漿模組故障',       n: 33, color: VIZ_SERIES[0] },
+  { k: 'per', code: 'PEr', label: 'PM2.5 模組異常',     n: 24, color: VIZ_SERIES[1] },
+  { k: 'e5',  code: 'E5',  label: '溫濕度 Sensor 異常', n: 20, color: VIZ_SERIES[2] },
+  { k: 'e6',  code: 'E6',  label: '水箱滿水超過 30 天', n: 12, color: VIZ_SERIES[3] },
+  { k: 'cer', code: 'Cer', label: '機器曾傾倒',         n:  8, color: VIZ_SERIES[4] },
+]

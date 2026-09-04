@@ -272,7 +272,9 @@ export interface FieldRecord {
   /** 未運轉台數中因水滿停機的部分;其餘 devTotal − devOnline − devTankFull 為單純關機 */
   devTankFull: number
   urgentParts: number  // 耗材判定「立即處理」的設備數
-  alarmDevices: number // 有未解除警報的設備數
+  alarmDevices: number // 當前有未解除警報的設備數
+  /** 過去 90 天曾出現警報的設備數(≥ alarmDevices;當前警報必然落在任何區間內) */
+  alarmPeriod: number
 }
 
 /* 真實設備 → 場域清單列。nm 由地址前兩段推出,只為清單好讀;主鍵仍是 MAC。 */
@@ -325,6 +327,8 @@ const DEVICE_ROWS: FieldRecord[] = DEVICE_REPORTS.map((r) => {
     devTankFull: !isOn && runTank > runOff ? 1 : 0,
     urgentParts: r.consumables.some((c) => c.urgency === '立即處理') ? 1 : 0,
     alarmDevices: m.lastAlarmCode !== 0 ? 1 : 0,
+    /* 報告沒有逐筆警報碼,但 events 的「水箱滿」是可驗證的異常事件,拿它當期間內曾警報 */
+    alarmPeriod: m.lastAlarmCode !== 0 || (r.events.find((e) => e.label === '水箱滿')?.count ?? 0) > 0 ? 1 : 0,
   }
 })
 
@@ -336,27 +340,27 @@ export const FIELDS_A_FULL: FieldRecord[] = [
      q 一律由 aircareIndex() 算,不手填 —— 手填會與級距、分群三方打架。
      舊值用的是室外 AQI 量級(pm 8–84),v2 對齊後改為室內實測量級。 */
   { nm: '臺北信義居家',   id: 'SH-0021', customerId: 'C202105001', customerName: '陳俊宏',       addr: '信義區松仁路',  type: '居家', sz: 42,  dev: '4/4',  lamp: 'g', q: 98, pm:  2.1, co2: 642,  mem: '陳俊宏 · 高級',  tier: 'g', cat: '1', hrs: 18.2, minPct: 64, predictedDays:  72,
-    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 54, temp: 25.8, devTotal:  4, devOnline: 4, devTankFull: 0, urgentParts: 0, alarmDevices: 0 },
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 54, temp: 25.8, devTotal:  4, devOnline: 4, devTankFull: 0, urgentParts: 0, alarmDevices: 0, alarmPeriod: 0 },
   { nm: '新北板橋辦公',   id: 'SH-1147', customerId: 'C202003042', customerName: '李文君',       addr: '板橋區文化路',  type: '辦公', sz: 88,  dev: '8/9',  lamp: 'g', q: 84, pm:  8.4, co2: 894,  mem: '李文君',         tier: '',  cat: '3', hrs: 10.4, minPct: 28, predictedDays:  18,
-    model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 62, temp: 26.4, devTotal:  9, devOnline: 8, devTankFull: 1, urgentParts: 1, alarmDevices: 1 },
+    model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 62, temp: 26.4, devTotal:  9, devOnline: 8, devTankFull: 1, urgentParts: 1, alarmDevices: 1, alarmPeriod: 2 },
   { nm: '臺中科技園區',   id: 'SH-2841', customerId: 'C201000272', customerName: '王婉真',       addr: '西屯區工業區',  type: '辦公', sz: 185, dev: '6/10', lamp: 'r', q: 24, pm: 34.2, co2: 1240, mem: '王婉真 · 高級',  tier: 'g', cat: '6', hrs:  6.1, minPct: 11, predictedDays:   6,
-    model: 'CS500', power: '開機', mode: '手動風量', humidity: 74, temp: 28.9, devTotal: 10, devOnline: 6, devTankFull: 3, urgentParts: 3, alarmDevices: 2 },
+    model: 'CS500', power: '開機', mode: '手動風量', humidity: 74, temp: 28.9, devTotal: 10, devOnline: 6, devTankFull: 3, urgentParts: 3, alarmDevices: 2, alarmPeriod: 5 },
   { nm: '高雄前鎮辦公',   id: 'SH-3052', customerId: 'C202206018', customerName: '張志成',       addr: '前鎮區成功二路', type: '辦公', sz: 64,  dev: '5/5',  lamp: 'g', q: 92, pm:  6.8, co2: 720,  mem: '張志成',         tier: '',  cat: '2', hrs: 14.6, minPct: 52, predictedDays:  48,
-    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 57, temp: 27.2, devTotal:  5, devOnline: 5, devTankFull: 0, urgentParts: 0, alarmDevices: 0 },
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 57, temp: 27.2, devTotal:  5, devOnline: 5, devTankFull: 0, urgentParts: 0, alarmDevices: 0, alarmPeriod: 1 },
   { nm: '桃園藝文居家',   id: 'SH-4119', customerId: 'C201912033', customerName: '黃慧君',       addr: '桃園區慈文路',  type: '居家', sz: 38,  dev: '3/3',  lamp: 'g', q: 99, pm:  1.2, co2: 580,  mem: '黃慧君 · 高級',  tier: 'g', cat: '1', hrs: 20.8, minPct: 71, predictedDays:  88,
-    model: 'CS500', power: '開機', mode: '雙智慧',   humidity: 52, temp: 25.1, devTotal:  3, devOnline: 3, devTankFull: 0, urgentParts: 0, alarmDevices: 0 },
+    model: 'CS500', power: '開機', mode: '雙智慧',   humidity: 52, temp: 25.1, devTotal:  3, devOnline: 3, devTankFull: 0, urgentParts: 0, alarmDevices: 0, alarmPeriod: 0 },
   { nm: '臺南安平診所',   id: 'SH-5023', customerId: 'C202109054', customerName: '安平診所',     addr: '安平區永華路',  type: '醫療', sz: 96,  dev: '7/8',  lamp: 'y', q: 68, pm: 19.6, co2: 920,  mem: '林醫師',         tier: '',  cat: '5', hrs:  9.2, minPct: 22, predictedDays:  14,
-    model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 61, temp: 26.8, devTotal:  8, devOnline: 7, devTankFull: 1, urgentParts: 1, alarmDevices: 1 },
+    model: 'CS201', power: '開機', mode: '清淨智慧', humidity: 61, temp: 26.8, devTotal:  8, devOnline: 7, devTankFull: 1, urgentParts: 1, alarmDevices: 1, alarmPeriod: 2 },
   { nm: '新竹東區居家',   id: 'SH-5208', customerId: 'C202304076', customerName: '吳承翰',       addr: '東區光復路',    type: '居家', sz: 52,  dev: '4/4',  lamp: 'g', q: 92, pm:  7.3, co2: 620,  mem: '吳承翰 · 高級',  tier: 'g', cat: '2', hrs: 16.5, minPct: 58, predictedDays:  56,
-    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 55, temp: 25.6, devTotal:  4, devOnline: 4, devTankFull: 0, urgentParts: 0, alarmDevices: 0 },
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 55, temp: 25.6, devTotal:  4, devOnline: 4, devTankFull: 0, urgentParts: 0, alarmDevices: 0, alarmPeriod: 1 },
   { nm: '臺北大安咖啡店', id: 'SH-5611', customerId: 'C202008123', customerName: '阿諾義式咖啡', addr: '大安區忠孝東路', type: '商業', sz: 28,  dev: '2/3',  lamp: 'y', q: 74, pm:  5.9, co2: 1080, mem: '阿諾義式',       tier: '',  cat: '4', hrs: 11.8, minPct: 18, predictedDays:   9,
-    model: 'CS101', power: '開機', mode: '除濕智慧', humidity: 68, temp: 27.9, devTotal:  3, devOnline: 2, devTankFull: 1, urgentParts: 1, alarmDevices: 1 },
+    model: 'CS101', power: '開機', mode: '除濕智慧', humidity: 68, temp: 27.9, devTotal:  3, devOnline: 2, devTankFull: 1, urgentParts: 1, alarmDevices: 1, alarmPeriod: 2 },
   { nm: '宜蘭礁溪民宿',   id: 'SH-6022', customerId: 'C202105099', customerName: '陶然居民宿',   addr: '礁溪鄉德陽路',  type: '商業', sz: 76,  dev: '4/4',  lamp: 'g', q: 92, pm:  7.1, co2: 690,  mem: '陶然居',         tier: '',  cat: '2', hrs: 13.4, minPct: 46, predictedDays:  32,
-    model: 'CS201', power: '開機', mode: '睡眠',     humidity: 59, temp: 26.2, devTotal:  4, devOnline: 4, devTankFull: 0, urgentParts: 0, alarmDevices: 0 },
+    model: 'CS201', power: '開機', mode: '睡眠',     humidity: 59, temp: 26.2, devTotal:  4, devOnline: 4, devTankFull: 0, urgentParts: 0, alarmDevices: 0, alarmPeriod: 1 },
   /* 第 7 群「乾燥」的示範場域(2026-09-03 新增)。沒有這一列,乾燥群在場域清單與
      詳情頁完全看不到,只會是分布卡上的一個數字。 */
   { nm: '臺中西屯居家',   id: 'SH-6540', customerId: 'C202207041', customerName: '林佩璇',       addr: '西屯區台灣大道', type: '居家', sz: 44,  dev: '3/3',  lamp: 'g', q: 90, pm:  1.8, co2: 610,  mem: '林佩璇',         tier: '',  cat: '7', hrs: 15.2, minPct: 61, predictedDays:  63,
-    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 41, temp: 24.6, devTotal:  3, devOnline: 3, devTankFull: 0, urgentParts: 0, alarmDevices: 0 },
+    model: 'CS301', power: '開機', mode: '雙智慧',   humidity: 41, temp: 24.6, devTotal:  3, devOnline: 3, devTankFull: 0, urgentParts: 0, alarmDevices: 0, alarmPeriod: 0 },
 ]
 
 /* 當區室外 PM2.5(Phase 2 待接,先示意) */
@@ -630,8 +634,11 @@ function buildPopulation(): FieldRecord[] {
     const devTotal = 1 + Math.floor(rnd() * 6)     // 之後由 popReconcile 收斂到 Σ = 4,832
     const roll = rnd()
     const power: PowerState = roll < 0.035 ? '水箱滿' : roll < 0.08 ? '關機' : '開機'
-    /* 耗材殘量與空氣分群無關(耗材看使用量,不看空品),所以不按 cat 分佈 */
-    const minPct = Math.round(15 + rnd() * 80)
+    /* 耗材殘量與空氣分群無關(耗材看使用量,不看空品),所以不按 cat 分佈。
+     * 約 4.5% 給 0 —— 沒有這批「已過期」,耗材壽命分布的第一格會是空的,
+     * 而真實資料裡確實有(C2026010062 的前置濾網剩餘 0%)。 */
+    const mp = rnd()
+    const minPct = mp < 0.045 ? 0 : Math.round(15 + mp * 80)
     const seq = String(i + 1).padStart(4, '0')
     return {
       nm: `${REGION_PREFIX[region]}${dist}${type}`,
@@ -662,6 +669,7 @@ function buildPopulation(): FieldRecord[] {
       devTankFull: 0,                              // 下方由未運轉台數推
       urgentParts: 0,
       alarmDevices: 0,
+      alarmPeriod: 0,
     }
   })
 
@@ -688,6 +696,10 @@ function buildPopulation(): FieldRecord[] {
     /* 耗材與警報由該場域的殘量與燈號推,不另外亂灑,才不會出現「全綠燈卻一堆警報」 */
     r.urgentParts = r.minPct < 20 ? Math.max(1, Math.round(r.devTotal * 0.5)) : r.minPct < 30 && r.devTotal >= 3 ? 1 : 0
     r.alarmDevices = r.lamp === 'r' ? Math.max(1, Math.round(r.devTotal * 0.4)) : r.lamp === 'y' && r.minPct < 25 ? 1 : 0
+    /* 90 天內曾警報的台數。當前沒警報不代表這 90 天都沒事 —— 約四分之一的設備
+     * 期間內至少響過一次,這才是「時間範圍內有警報設備」要回答的問題。 */
+    const ar = mulberry32(0xA1A2 + i * 2246822519)()
+    r.alarmPeriod = Math.min(r.devTotal, r.alarmDevices + Math.round(r.devTotal * ar * 0.5))
   })
   return rows
 }

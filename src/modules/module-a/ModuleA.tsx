@@ -53,9 +53,18 @@ import {
   computeModeDist,
   FAN_SPEED_DIST,
   FAN_SPEED_SOURCE,
+  computePartLifeDist,
+  computePartCycleDist,
+  computeServiceTiming,
+  computeAlarmKpi,
+  ALARM_CODES,
+  ALARM_CODE_SOURCE,
+  LIFE_LEGEND,
   type OverviewFilters,
   type TierCount,
   type DonutSlice,
+  type StackRow,
+  type ServiceTier,
 } from '../../mocks/module-a-overview'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
 import type { DeviceReport } from '../../mocks/devices'
@@ -165,6 +174,219 @@ function TierDistCard({ icon, title, sub, headline, tiers, catMeta, batch }: {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* 預警數字卡。單一數字就是重點,所以是 hero number 而不是圖表 ——
+ * 一個數字畫成一根長條沒有比數字本身好讀。「顯示名單」直接把下方明細表篩成該批場域。 */
+function AlarmStatCard({ label, sub, value, tone, active, onShowList, batch }: {
+  label: string
+  sub: string
+  value: number
+  tone: 'danger' | 'info'
+  /** 目前明細表是否正被這張卡篩住 */
+  active: boolean
+  onShowList: () => void
+  batch: string
+}) {
+  const color = tone === 'danger' ? 'var(--as-danger)' : 'var(--as-info)'
+  return (
+    <div className="card" style={{ display: 'flex', flexDirection: 'column' }} {...batchAttrs(batch)}>
+      <div className="ch" style={{ marginBottom: 0 }}>
+        <div>
+          <h3>{label}</h3>
+          <div className="csub">{sub}</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'baseline', justifyContent: 'center', padding: '20px 0 10px' }}>
+        <span className="mono" style={{ fontSize: 56, fontWeight: 600, color, lineHeight: 1, letterSpacing: '-0.02em' }}>
+          {value.toLocaleString()}
+        </span>
+        <span style={{ fontSize: 13, color: 'var(--as-mute)', marginLeft: 6 }}>台</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          className={`rowbtn${active ? ' on' : ''}`}
+          onClick={onShowList}
+          style={{ width: 'auto', height: 'auto', padding: '4px 10px', fontSize: 11, whiteSpace: 'nowrap' }}
+        >
+          {active ? '已篩選 · 點此清除' : '顯示名單'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* 警報狀況分析。五個碼別、數量差距大,用橫條 + 數值列比圓餅好讀。 */
+function AlarmCodeCard({ codes, note, batch }: {
+  codes: { k: string; code: string; label: string; n: number; color: string }[]
+  note: string
+  batch: string
+}) {
+  const max = Math.max(...codes.map((c) => c.n), 1)
+  const total = codes.reduce((s, c) => s + c.n, 0)
+  return (
+    <div className="card" {...batchAttrs(batch)}>
+      <div className="ch">
+        <div>
+          <h3>警報狀況分析</h3>
+          <div className="csub">依警報碼 · 合計 {total.toLocaleString()} 台</div>
+        </div>
+        <span style={{ fontSize: 10, color: 'var(--as-mute)', textAlign: 'right', maxWidth: 170 }}>{note}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 8 }}>
+        {codes.map((c) => (
+          <div key={c.k} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="mono" style={{
+              width: 34, flex: 'none', fontSize: 10.5, fontWeight: 700, textAlign: 'center',
+              padding: '2px 0', borderRadius: 4, background: c.color + '1A', color: c.color,
+            }}>{c.code}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--as-ink-2)', marginBottom: 3 }}>{c.label}</div>
+              <div style={{ height: 6, background: 'var(--as-line-2)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${(c.n / max) * 100}%`, height: '100%', background: c.color, borderRadius: 3 }} />
+              </div>
+            </div>
+            <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-ink)', width: 34, textAlign: 'right' }}>
+              {c.n}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* 堆疊橫條卡(耗材壽命 / 更換週期)。一類一條,條內依級距分段。
+ * 為什麼不是甜甜圈:這裡要比較的是「三類耗材誰先到期」,上下對齊的橫條可以直接比,
+ * 三個環並排沒辦法。段與段之間留 2px 底色縫,相鄰色塊才不會黏成一片。
+ * 級距不同的兩張卡(初濾 4 級、中堅/HEPA 5 級)把圖例畫在各自那一條下面。 */
+function StackedPartsCard({ title, sub, note, rows: partRows, legend, batch }: {
+  title: string
+  sub: string
+  note?: string
+  rows: StackRow[]
+  /** 三條共用同一組級距時才給;不給則每條各畫自己的級距 */
+  legend?: { k: string; label: string; color: string }[]
+  batch: string
+}) {
+  const [hover, setHover] = useState<string | null>(null)
+  return (
+    <div className="card" {...batchAttrs(batch)}>
+      <div className="ch">
+        <div>
+          <h3>{title}</h3>
+          <div className="csub">{sub}</div>
+        </div>
+        {note && <span style={{ fontSize: 10, color: 'var(--as-mute)', textAlign: 'right', maxWidth: 180 }}>{note}</span>}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: legend ? 14 : 16, marginTop: 10 }}>
+        {partRows.map((r) => (
+          <div key={r.k}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 5 }}>
+              <span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--as-ink)' }}>{r.label}</span>
+                <span style={{ fontSize: 10, color: 'var(--as-mute)', marginLeft: 6 }}>{r.sub}</span>
+              </span>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--as-mute)' }}>{r.total.toLocaleString()} 台</span>
+            </div>
+            <div style={{ display: 'flex', gap: 2, height: 14, borderRadius: 4, overflow: 'hidden', background: 'var(--as-line-2)' }}>
+              {r.segs.filter((g) => g.n > 0).map((g) => (
+                <div
+                  key={g.k}
+                  title={`${r.label} · ${g.label} ${g.n.toLocaleString()} 台 (${g.pct}%)`}
+                  onMouseEnter={() => setHover(`${r.k}-${g.k}`)}
+                  onMouseLeave={() => setHover(null)}
+                  style={{
+                    width: `${g.pct}%`, background: g.color, cursor: 'pointer',
+                    opacity: hover && hover !== `${r.k}-${g.k}` ? 0.4 : 1, transition: 'opacity .12s',
+                  }}
+                />
+              ))}
+            </div>
+            {/* 共用圖例時級距寫在卡片下方,否則逐條列出自己的級距 */}
+            {!legend && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginTop: 5 }}>
+                {r.segs.map((g) => (
+                  <span
+                    key={g.k}
+                    onMouseEnter={() => setHover(`${r.k}-${g.k}`)}
+                    onMouseLeave={() => setHover(null)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10,
+                      color: g.n === 0 ? 'var(--as-mute-2)' : 'var(--as-ink-2)', cursor: 'pointer',
+                    }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: 2, background: g.color, opacity: g.n === 0 ? 0.35 : 1 }} />
+                    {g.label}
+                    <span className="mono" style={{ fontWeight: 600 }}>{g.n.toLocaleString()}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {legend && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 12,
+          paddingTop: 10, borderTop: '1px solid var(--as-line-2)', fontSize: 10.5, color: 'var(--as-ink-2)',
+        }}>
+          {legend.map((l) => (
+            <span key={l.k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: l.color }} />
+              {l.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* 處理時機 —— 沿用分群層 seg-card 的版面(級距 chip / 現況 / 行動 / 台數),
+ * 數字改由當前 filtered 母體算。單獨一列,因為每一列都帶一句派工行動,需要橫向空間。 */
+function ServiceTimingCard({ tiers, total, batch }: {
+  tiers: ServiceTier[]
+  total: number
+  batch: string
+}) {
+  return (
+    <div className="seg-card" {...batchAttrs(batch)}>
+      <div className="sg-h">
+        <div>
+          <div className="sg-axis">耗材</div>
+          <h3>處理時機</h3>
+          <div className="sg-sub">依六類耗材最低殘量 % · 目前條件 {total.toLocaleString()} 台</div>
+        </div>
+        <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>{tiers.length} 級</span>
+      </div>
+      <div className="sg-stack">
+        {tiers.map((t) => (
+          <div key={t.k} style={{ width: `${t.pct}%`, background: t.color, height: '100%' }}></div>
+        ))}
+      </div>
+      <div className="sg-legend">
+        {tiers.map((t) => (
+          <span key={t.k}><span className="d" style={{ background: t.color }}></span>{t.pct}%</span>
+        ))}
+      </div>
+      <div className="sg-rows">
+        {tiers.map((t) => (
+          <div className="sg-r" key={t.k}>
+            <div className="sg-pct" style={{ background: t.color + '18', color: t.color, borderColor: t.color + '50' }}>{t.label}</div>
+            <div className="sg-info">
+              <div className="sg-traits">{t.traits}</div>
+              <div className="sg-action"><Icon name="arrow" size={10} />{t.action}</div>
+            </div>
+            <div className="sg-num">
+              <div className="v mono">{t.n.toLocaleString()}</div>
+              <div className="l">設備</div>
             </div>
           </div>
         ))}
@@ -357,6 +579,15 @@ function AOverview({
   const usageDist = useMemo(() => computeUsageDist(rows), [rows])
   const powerDist = useMemo(() => computePowerDist(rows), [rows])
   const modeDist = useMemo(() => computeModeDist(rows), [rows])
+  const lifeDist = useMemo(() => computePartLifeDist(rows), [rows])
+  const cycleDist = useMemo(() => computePartCycleDist(rows), [rows])
+  const serviceTiers = useMemo(() => computeServiceTiming(rows), [rows])
+  const alarmKpi = useMemo(() => computeAlarmKpi(rows, filters.range), [rows, filters.range])
+  /* 「顯示名單」把明細表篩成該批場域並捲過去;再點一次清除。 */
+  const showAlarmList = (scope: 'now' | 'period') => {
+    setFilter('alarmScope', filters.alarmScope === scope ? 'all' : scope)
+    setTimeout(() => document.getElementById('ov-detail-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+  }
 
   const pageCount = Math.max(1, Math.ceil(rows.length / OVERVIEW_PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
@@ -433,6 +664,17 @@ function AOverview({
           >
             <Icon name="globe" size={11} />
             {selectedRegionMeta.r}
+            <Icon name="x" size={10} />
+          </span>
+        )}
+        {filters.alarmScope !== 'all' && (
+          <span
+            className="chip on"
+            style={{ cursor: 'pointer' }}
+            title="清除警報名單篩選"
+            onClick={() => setFilter('alarmScope', 'all')}
+          >
+            {filters.alarmScope === 'now' ? '當前有警報' : '期間內曾警報'}
             <Icon name="x" size={10} />
           </span>
         )}
@@ -658,6 +900,45 @@ function AOverview({
           sub={`風速 0–9 級 · ${FAN_SPEED_SOURCE.devices.toLocaleString()} 台`}
           note={`示範值 · 來源 ${FAN_SPEED_SOURCE.label},母體與本頁 ${kpi.devices.toLocaleString()} 台不同 · 不受篩選影響`}
           slices={FAN_SPEED_DIST}
+        />
+      </div>
+
+      {/* 耗材相關(第六屏)—— 壽命與週期一列兩張,處理時機因為每列都帶派工行動,單獨一列 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginTop: 16 }}>
+        <StackedPartsCard
+          batch="A.設備總覽.耗材壽命分布" title="耗材壽命(時間)分布"
+          sub={`初濾 / 中堅 / 後 HEPA · 剩餘天數 · ${kpi.devices.toLocaleString()} 台`}
+          note="剩餘天數 = 更換週期 × 剩餘 %"
+          rows={lifeDist} legend={LIFE_LEGEND}
+        />
+        <StackedPartsCard
+          batch="A.設備總覽.濾網更換週期" title="濾網更換週期分析"
+          sub={`容量時數 ÷ 日均運轉時數 · ${kpi.devices.toLocaleString()} 台`}
+          note="級距依各類耗材不同,標在各條下方"
+          rows={cycleDist}
+        />
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <ServiceTimingCard batch="A.設備總覽.處理時機" tiers={serviceTiers} total={kpi.devices} />
+      </div>
+
+      {/* 預警相關(第七屏)—— 三張一列。前兩張是 hero number(單一數字就是重點,
+          畫成長條不會比數字本身好讀),第三張是碼別分布。 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr', gap: 16, marginTop: 16 }}>
+        <AlarmStatCard
+          batch="A.設備總覽.當前警報" label="當前有警報設備" tone="danger"
+          sub="未解除警報" value={alarmKpi.now}
+          active={filters.alarmScope === 'now'} onShowList={() => showAlarmList('now')}
+        />
+        <AlarmStatCard
+          batch="A.設備總覽.期間警報" label="時間範圍內有警報設備" tone="info"
+          sub={`${TIME_RANGES.find((r) => r.k === filters.range)?.label}內曾出現警報 · 佔 ${alarmKpi.periodPct}%`}
+          value={alarmKpi.period}
+          active={filters.alarmScope === 'period'} onShowList={() => showAlarmList('period')}
+        />
+        <AlarmCodeCard
+          batch="A.設備總覽.警報狀況分析" codes={ALARM_CODES}
+          note={`示範值 · 來源 ${ALARM_CODE_SOURCE.label},母體無碼別維度 · 不受篩選影響`}
         />
       </div>
 
@@ -911,7 +1192,7 @@ function AOverview({
 
       {/* 場域明細表 —— 母體為 filterFields 的結果,與上方七張 KPI 字卡同源。
           2026-09-03:新增機型 / 電源 / 使用模式 / 濕度 / 溫度欄,分頁改成真的。 */}
-      <div className="dt-wrap" style={{ marginTop: 16 }} {...batchAttrs('A.設備總覽.場域明細表')}>
+      <div className="dt-wrap" id="ov-detail-table" style={{ marginTop: 16 }} {...batchAttrs('A.設備總覽.場域明細表')}>
         {selectedRegionMeta && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
@@ -1106,12 +1387,12 @@ function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
     <>
       {/* 分群層 hero 已依 2026-05-29 PDF 拉掉 */}
 
-      {/* 2 欄 grid:分群卡 × 2(耗材 / 水箱)/ 場域類型分佈。
-          空氣品質、濕度控制與使用強度三張卡於 2026-09-03 移到「設備總覽」。 */}
+      {/* 2 欄 grid:分群卡 × 1(水箱)/ 場域類型分佈。
+          空氣品質、濕度控制、使用強度與耗材處理時機於 2026-09-03 移到「設備總覽」。 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
-        {/* 「依使用強度」(index 1)於 2026-09-03 移到設備總覽的設備使用四卡,
-            這裡不再重複一張;si 仍是 SEGMENTS_A 的原始索引,fieldGroupIndex 才對得上。 */}
-        {SEGMENTS_A.map((s, si) => ({ s, si })).filter(({ si }) => si !== 1).map(({ s, si }) => (
+        {/* 「依耗材剩餘壽命」(index 0)與「依使用強度」(index 1)已移到設備總覽,
+            這裡不再重複;si 仍是 SEGMENTS_A 的原始索引,fieldGroupIndex 才對得上。 */}
+        {SEGMENTS_A.map((s, si) => ({ s, si })).filter(({ si }) => si !== 0 && si !== 1).map(({ s, si }) => (
           <div className="seg-card" key={s.title}>
             <div className="sg-h">
               <div>
