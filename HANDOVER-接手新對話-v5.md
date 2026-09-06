@@ -2,7 +2,7 @@
 
 > **給誰看**：接手這個 repo 的前端／全端工程師。
 > **怎麼用**：新對話時附上本檔並說「接手 AirSure，以下是交接文件」。
-> **與 v4 的關係**：v4 停在 2026-05-29（commit `6f8e6ea`）且以產品敘述為主；本版重寫為工程視角，內容以 2026-09-06 `62d56f8` 的實際程式碼為準。v3／v4 僅作歷史保留，**兩者的敘述與現況已多處不符，不要拿來當規格**。
+> **與 v4 的關係**：v4 停在 2026-05-29（commit `6f8e6ea`）且以產品敘述為主；本版重寫為工程視角，內容以 2026-09-06 `26e2607` 的實際程式碼為準。v3／v4 僅作歷史保留，**兩者的敘述與現況已多處不符，不要拿來當規格**。
 
 ---
 
@@ -15,7 +15,7 @@
 | **本機 repo** | `~/repos/airsure`（⚠ v3/v4 寫的 `~/Desktop/airsure` 已不存在） |
 | **主分支** | `main`（唯一分支，無 develop／release） |
 | **部署** | Cloudflare Pages，push `main` 自動建置，約 1–2 分鐘反映 |
-| **當前 commit** | `62d56f8`（2026-09-06 · Module A 族群分析改版） |
+| **當前 commit** | `26e2607`（2026-09-06 · Module A 名單成效 tab） |
 | **Node** | 22（`.nvmrc`；實測 v22.22.2 / npm 10.9.7） |
 | **框架** | React 19.2 · TypeScript ~6.0 · Vite 8 · Tailwind v4（`@tailwindcss/vite`）· react-router-dom 7 |
 | **CI** | 無（`.github/` 不存在）。品質關卡靠本機 `npm run build` + `npm run lint` |
@@ -60,7 +60,7 @@ src/
 ├── modules/
 │   ├── dashboard/Dashboard.tsx     545   首頁（persona 硬寫 gm）
 │   ├── module-a/
-│   │   ├── ModuleA.tsx            3325   ⚠ 全 repo 最大檔，四個第一層 tab 都在裡面
+│   │   ├── ModuleA.tsx            3660   ⚠ 全 repo 最大檔，五個第一層 tab 都在裡面
 │   │   └── AFieldList.tsx          482   場域清單（報告產製九態）
 │   ├── module-b/
 │   │   ├── ModuleB.tsx            2330   用戶 360°（7 sub-tab）
@@ -79,9 +79,10 @@ src/
 │   ├── module-a.ts                1343   ⭐ AirCare v2 分群／評分唯一真相 + 1,284 場域母體
 │   ├── module-a-overview.ts        681   設備總覽的篩選／KPI／各分布 compute*
 │   ├── module-a-report.ts          527   場域清單九態、輪廓、寄發 overlay
+│   ├── module-a-campaign.ts        297   名單成效:方案／寄發頻率／CTA／跟進(全 overlay)
 │   ├── eligible-customers.ts       112   AIRCARE 合格清單 72 台／69 位（去識別化）
 │   └── module-b.ts ~ module-h.ts        其餘模組假資料
-├── data/batch-map.ts               171   90 列卡片 → P1/P2/P3 批次對照
+├── data/batch-map.ts               175   94 列卡片 → P1/P2/P3 批次對照
 ├── components/
 │   ├── layout/{PageShell,Header,Sidebar}.tsx
 │   ├── ui/{BatchAttrs.ts,BatchModeToggle.tsx,Icon.tsx}
@@ -203,9 +204,14 @@ aircareIndex = pm25Score(pm) × 0.5 + humidityScore(humidity) × 0.5
 
 ---
 
-## 六、Module A 現況（四個第一層 tab）
+## 六、Module A 現況（五個第一層 tab）
 
-`ATab = 'overview' | 'segments' | 'list' | 'personal'`，狀態（當前場域 id、個人層 sub-tab、類別篩選）提到 `ModuleA` root，所以任何一層都能互跳。
+`ATab = 'overview' | 'segments' | 'perf' | 'list' | 'personal'`，狀態（當前場域 id、個人層 sub-tab、類別篩選、名單成效的族群鎖定）提到 `ModuleA` root，所以任何一層都能互跳。
+
+```
+設備總覽 → 族群分析 → 名單成效 → 場域清單 → 個人場域資訊
+ (母體)     (分群)    (方案×頻率)  (逐戶執行)    (單戶)
+```
 
 ### 6.1 設備總覽 `overview`
 
@@ -225,7 +231,17 @@ KPI 七格（`computeOverviewKpi`）：連網設備數 · 平均 PM2.5 · 平均
 - 點卡後下方展開四張分析：北中南佔比（以**戶**計，名單是按戶寄發）／使用強度／使用模式／濾網更換週期。
 - 「優化方向分析」（`computeOptimizeDirection`）：由 P×H 矩陣**反推**這一群要跨哪條線、平均還差多少、多少戶適用；金級沒有往上空間，改列健康度 TOP 10（`topByScore`）。
 
-### 6.3 場域清單 `list`（`AFieldList.tsx`）
+### 6.3 名單成效 `perf`（`26e2607` 上線，簡報第十屏）
+
+- 資料層 `mocks/module-a-campaign.ts`。Plan／note：`docs/module-a-list-performance-plan.md`、`docs/implementation-notes/module-a-list-performance-implementation-note.md`。
+- 方案選擇（2026.10 噴噴方案 / 2026.07 濕度改善方案）→ 名單依寄發頻率分週／月／季三批 → 每批三張成效卡：寄發漏斗（六階段 + 階段留存）、CTA 環圈成效、服務跟進成效。
+- **名單母體是 `FIELDS_A_POP`，與族群分析同源**，所以戶數可對帳：週報 471 = ④+⑤+⑥、月報 84 = ③+⑦、季報 729 = ①+②。
+  ⚠ 不要改接場域清單那份合格清單 —— 合格清單裡只有 3 台有設備分析報告，其餘 `cat` 為 `null`，接上去名單只剩 13 戶、漏斗全為 0（已踩過，見 note 決策 1）。
+- 寄發頻率由分群推出（風險群週報 / 銅級乾燥月報 / 金銀級季報），CTA 權重依族群痛點分配 —— **兩者都是示範規則**，正式版該由方案設定與客戶訂閱決定。
+- 族群分析的族群卡「CTA 行動」「服務跟進」已改為跳這個 tab 並鎖定該族群（原本是 disabled 佔位）。
+- ⚠ 寄發／開啟／CTA／跟進**全部是固定 seed 的 overlay，沒有資料源**，四張卡皆標 P2。
+
+### 6.4 場域清單 `list`（`AFieldList.tsx`）
 
 - 依《AIRCARE 報告產製 Dashboard 設計規格》§3／§4：**一客戶一列、多設備可展開**（一設備 = 一份報告）。
 - 母體：`ELIGIBLE_DEVICES`（AIRCARE 合格清單 72 台／69 位）+ 9 筆示範。出現在合格清單 = 已通過資料門檻，前端不再自己判 90 天。
@@ -234,7 +250,7 @@ KPI 七格（`computeOverviewKpi`）：連網設備數 · 平均 PM2.5 · 平均
 - KPI 一律標「真實 N · 示範 M」，避免把虛構寄發數當營運實績。
 - ⚠ **除了「揭露閘門」與「真實設備的資料涵蓋天數」，九態／輪廓／寄發／上次到期全是示範 overlay**，正式版由報告產出引擎回填（規格 §9 `GET /reports/dashboard`）。
 
-### 6.4 個人場域資訊 `personal`
+### 6.5 個人場域資訊 `personal`
 
 5 個 sub-tab：場域詳情 / 空氣品質 / 使用行為 / 濾網管理 / 水箱管理。
 後四者需要真實設備報告，示範場域一律 `NoReport`（§4.1）。
@@ -261,7 +277,7 @@ KPI 七格（`computeOverviewKpi`）：連網設備數 · 平均 PM2.5 · 平均
 
 用途：內部 demo 時一眼分辨「哪些卡 8/1 接得到、哪些要等資料」。
 
-- 對照表 `src/data/batch-map.ts`：**90 列**（P1 37 / P2 41 / P3 12，其中 3 張 ⚠ 警示）。
+- 對照表 `src/data/batch-map.ts`：**94 列**（P1 37 / P2 45 / P3 12，其中 3 張 ⚠ 警示）。
 - key 慣例 `<Module>.<Tab>.<卡片名>`，例：`'A.族群分析.優化方向'`。
 - 用法：
   ```tsx
@@ -276,7 +292,9 @@ KPI 七格（`computeOverviewKpi`）：連網設備數 · 平均 PM2.5 · 平均
 ## 九、跨模組導航
 
 ```
-Module A 建議聯繫客戶卡 / 族群卡「顯示名單」
+Module A 族群卡「CTA 行動 / 服務跟進」
+  ↓ openPerf(catId, view) → tab='perf' + perfCat + 捲到對應成效卡
+Module A 建議聯繫客戶卡 / 族群卡「顯示名單」/ 名單成效「寄發管理」
   ↓ openCategoryList(catId) → tab='list' + catFilter
 Module A 場域清單 row
   ↓ openDetailById(fid) → tab='personal' + subTab='detail'
@@ -307,11 +325,12 @@ Module B → 個人 360°
 | # | 問題 | 影響 | 備註 |
 |---|---|---|---|
 | 1 | `npm run lint` **9 個既有 error** | 不擋 build，但沒有乾淨基線 | `ModuleA.tsx` ×3（`no-useless-assignment`）、`ModuleB.tsx`（effect 內 setState）、`ModuleE.tsx`（no-unused-expressions）、`Header.tsx`、`Dashboard.tsx`、`useMember360.ts` ×2 |
-| 2 | `ModuleA.tsx` 3,325 行 | 難維護、chunk 最大 | 建議按 tab 拆檔（`AOverview` / `ASegments` / `APersonal`），`AFieldList` 已示範拆法 |
+| 2 | `ModuleA.tsx` 3,660 行 | 難維護、chunk 最大 | 建議按 tab 拆檔（`AOverview` / `ASegments` / `AListPerformance` / `APersonal`），`AFieldList` 已示範拆法 |
 | 3 | `modules.css` 6,423 行單檔 | 找樣式費時 | |
 | 4 | `react-router-dom` 放在 **devDependencies** | 目前能 build（有打包進 bundle），但語意錯誤 | 應移到 dependencies |
 | 5 | 無測試、無 CI | 迴歸只能靠人工 smoke | |
 | 6 | 場域清單九態／輪廓／寄發是示範 overlay | 不能當營運數據 | 等報告產出引擎 `GET /reports/dashboard` |
+| 6b | 名單成效的方案／寄發／CTA／跟進**全是 overlay** | 同上，且方案主檔只有兩筆硬編資料 | 需 `GET /api/campaigns` 等四支端點，見 plan 項目 3 |
 | 7 | `PersonaView` 只吃 `liveMember` | 跨模組跳轉帶的 `memberId` 被忽略，一律顯示王敬梅 | 見 §9 |
 | 8 | `INDOOR_OUTDOOR` / `DHI_ATTRIBUTION` 待環境部 API | 卡片標「待接入」 | `status = 'live'` 後拿掉標示 |
 | 9 | 中台尚未回傳 `family_bothered` | 報告「客戶輪廓」目前吃不到真值，欄位已備好 | 中台補上後前端自動生效 |
@@ -361,6 +380,7 @@ Module B → 個人 360°
 | 09-03 | `eea8a1a` | **分群／級距／評分全面對齊 AirCare v2**，兩張級距卡移入設備總覽 |
 | 09-04 | `e1ea995` `508ff38` | 設備總覽新增設備使用四卡、耗材三卡、預警三卡 |
 | 09-06 | `62d56f8` | **「分類概況」改版為「族群分析」**（族群卡 + 四項分析 + 優化方向） |
+| 09-06 | `26e2607` | **新增「名單成效」tab**（方案 × 週/月/季 → 寄發漏斗 / CTA / 服務跟進） |
 
 ---
 
@@ -379,7 +399,8 @@ Module B → 個人 360°
 - [ ] 環境部 AQI 室內外落差 API
 
 **P2 · 功能**
-- [ ] 族群分析的「CTA 行動」「服務跟進」成效管理（目前 disabled）
+- [ ] 名單成效接真資料：`GET /api/campaigns`、`/campaigns/{id}/members`、`/cta`、`/followup`
+- [ ] 寄發頻率改由方案設定與客戶訂閱決定，不再由風險度推導
 - [ ] `PersonaView` 支援多會員
 - [ ] Module E P2（渠道歸因 / CPA+留存 / 積點 ROI）
 - [ ] 手機版 Hero + sub-tab nav 摺疊
@@ -390,4 +411,4 @@ Module B → 個人 360°
 
 ---
 
-*v5 · 2026-09-06 · 對應 commit `62d56f8`*
+*v5 · 2026-09-06 · 對應 commit `26e2607`*
