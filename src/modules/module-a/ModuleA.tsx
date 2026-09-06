@@ -1,10 +1,21 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useRef, useEffect, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMemberByCode } from '../../hooks/useMember360'
 import { PageShell } from '../../components/layout/PageShell'
 import { Icon } from '../../components/ui/Icon'
 import { Sparkline } from '../../components/charts/Sparkline'
 import { batchAttrs } from '../../components/ui/BatchAttrs'
+import {
+  CAMPAIGNS,
+  CAMPAIGN_MEMBERS,
+  cadenceSummaries,
+  computeFunnel,
+  computeCtaPerf,
+  computeFollowPerf,
+  listSource,
+  type Cadence,
+  type CadenceSummary,
+} from '../../mocks/module-a-campaign'
 import {
   FIELDS_A_FULL,
   FIELDS_A_POP,
@@ -1361,14 +1372,18 @@ function AOverview({
 /* ── 分群層 ─────────────────────────────────────────── */
 /* 族群卡:名單規模 + 三個管理入口。
  * 「寄發管理」與「顯示名單」都接到場域清單並套該族群篩選 —— 清單那邊本來就有
- * 寄發狀態與九態;CTA 與服務跟進沒有資料源,做成不可點的佔位而不是死連結。 */
-function CohortCard({ meta, fields, devices, picked, onPick, onJumpList }: {
+ * 寄發狀態與九態。
+ * 2026-09-06:CTA 與服務跟進不再是不可點的佔位,改接「名單成效」tab 並鎖定
+ * 該族群;成效數字本身仍是示範 overlay(見 mocks/module-a-campaign.ts)。 */
+function CohortCard({ meta, fields, devices, picked, onPick, onJumpList, onJumpPerf }: {
   meta: CategoryMeta
   fields: number
   devices: number
   picked: boolean
   onPick: () => void
   onJumpList: () => void
+  /** 跳「名單成效」並鎖定此族群(2026-09-06:CTA/服務跟進的佔位由此接上) */
+  onJumpPerf: (view: 'cta' | 'follow') => void
 }) {
   const entry = (label: string, sub: string, enabled: boolean, onClick?: () => void) => (
     <button
@@ -1427,8 +1442,8 @@ function CohortCard({ meta, fields, devices, picked, onPick, onJumpList }: {
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
         {entry('寄發管理', '進場域清單', true, onJumpList)}
-        {entry('CTA 行動', '成效管理', false)}
-        {entry('服務跟進', '成效管理', false)}
+        {entry('CTA 行動', '成效管理', true, () => onJumpPerf('cta'))}
+        {entry('服務跟進', '成效管理', true, () => onJumpPerf('follow'))}
       </div>
     </div>
   )
@@ -1441,9 +1456,10 @@ function CohortCard({ meta, fields, devices, picked, onPick, onJumpList }: {
 const TIER_COHORTS: CatId[] = ['1', '2', '3']
 const IMPROVE_COHORTS: CatId[] = ['4', '5', '6', '7']
 
-function ASegments({ onOpenDetail, onJumpListByCategory }: {
+function ASegments({ onOpenDetail, onJumpListByCategory, onJumpPerfByCategory }: {
   onOpenDetail: (fid: string) => void
   onJumpListByCategory: (catId: CatId) => void
+  onJumpPerfByCategory: (catId: CatId, view: 'cta' | 'follow') => void
 }) {
   const [picked, setPicked] = useState<CatId>('1')
   /* 族群分析看完整統計期,不吃設備總覽那組篩選(那是另一個 tab 的狀態) */
@@ -1476,6 +1492,7 @@ function ASegments({ onOpenDetail, onJumpListByCategory }: {
               key={id} meta={catMeta(id)} fields={list.length} devices={devicesOf(list)}
               picked={picked === id} onPick={() => setPicked(id)}
               onJumpList={() => onJumpListByCategory(id)}
+              onJumpPerf={(view) => onJumpPerfByCategory(id, view)}
             />
           )
         })}
@@ -3246,9 +3263,302 @@ function ALocationDetail({
   )
 }
 
+/* ── 名單成效(行銷名單成效管理) ─────────────────────────────────────
+ * 依簡報第十屏:一個行銷方案 → 名單依寄發頻率分週/月/季三批 → 每批各自追
+ * 寄發、報告內 CTA 環圈點擊、服務跟進三段成效。
+ * Plan:docs/module-a-list-performance-plan.md
+ *
+ * 名單母體與族群分析同源(FIELDS_A_POP),所以週報戶數 = ④+⑤+⑥ 的族群卡戶數,
+ * 兩個 tab 可以對帳。⚠ 成效事件全是示範 overlay,沒有資料源。 */
+
+/** 三張成效卡共用的橫條列:標籤 + 條 + 右側數值 */
+function PerfBar({ label, sub, n, pct, color, right, unit }: {
+  label: string
+  sub?: string
+  n: number
+  pct: number
+  color: string
+  /** 右側附註(階段留存率 / 跟進率) */
+  right?: string
+  unit: string
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ width: 108, flex: 'none' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--as-ink)' }}>{label}</div>
+        {sub && <div style={{ fontSize: 9.5, color: 'var(--as-mute)' }}>{sub}</div>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, height: 20, borderRadius: 4, background: 'var(--as-line-2)', overflow: 'hidden' }}>
+        <div style={{ width: `${Math.max(pct, 0.6)}%`, height: '100%', background: color, borderRadius: 4, transition: 'width .18s' }} />
+      </div>
+      <div style={{ width: 128, flex: 'none', textAlign: 'right' }}>
+        <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-ink)' }}>{n.toLocaleString()}</span>
+        <span style={{ fontSize: 10, color: 'var(--as-mute)', marginLeft: 3 }}>{unit}</span>
+        <span className="mono" style={{ fontSize: 10.5, color: 'var(--as-mute)', marginLeft: 6 }}>{pct}%</span>
+        {right && <div style={{ fontSize: 9.5, color: 'var(--as-mute)' }}>{right}</div>}
+      </div>
+    </div>
+  )
+}
+
+/** 一批名單(週/月/季)的卡片。版面沿用族群卡:規模 + 顯示名單 + 三個管理入口 */
+function CadenceCard({ s, picked, onPick, onJumpList, onFocus }: {
+  s: CadenceSummary
+  picked: boolean
+  onPick: () => void
+  onJumpList: () => void
+  onFocus: (view: 'cta' | 'follow') => void
+}) {
+  const entry = (label: string, sub: string, onClick: () => void) => (
+    <button
+      key={label}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      style={{
+        flex: 1, minWidth: 0, padding: '7px 6px', borderRadius: 6, textAlign: 'center',
+        border: `1px solid ${s.color}33`, background: s.bg, color: s.color, font: 'inherit',
+        cursor: 'pointer', lineHeight: 1.3,
+      }}
+    >
+      <div style={{ fontSize: 11.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 9.5, opacity: 0.85 }}>{sub}</div>
+    </button>
+  )
+  const empty = s.size === 0
+  return (
+    <div
+      className="card"
+      onClick={empty ? undefined : onPick}
+      style={{
+        cursor: empty ? 'default' : 'pointer', padding: 14, opacity: empty ? 0.55 : 1,
+        borderColor: picked ? s.color : undefined,
+        boxShadow: picked ? `0 0 0 2px ${s.color}33` : undefined,
+        transition: 'box-shadow .12s, border-color .12s',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: s.color }}>{s.label}</div>
+          <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 3 }}>{s.sub}</div>
+        </div>
+        <button
+          className="rowbtn"
+          onClick={(e) => { e.stopPropagation(); onJumpList() }}
+          style={{ width: 'auto', height: 'auto', padding: '3px 9px', fontSize: 10.5, whiteSpace: 'nowrap', flex: 'none' }}
+        >
+          顯示名單
+        </button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, margin: '10px 0 2px' }}>
+        <span className="mono" style={{ fontSize: 30, fontWeight: 600, color: 'var(--as-ink)', lineHeight: 1 }}>
+          {s.size.toLocaleString()}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>戶</span>
+      </div>
+      <div className="mono" style={{ fontSize: 10.5, color: 'var(--as-mute)', marginBottom: 8 }}>
+        已寄 {s.sent.toLocaleString()} · 開啟 {s.opened.toLocaleString()} · 點 CTA {s.clicked.toLocaleString()} · 跟進 {s.followed.toLocaleString()}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {entry('寄發管理', '進場域清單', onJumpList)}
+        {entry('CTA 行動', '成效管理', () => onFocus('cta'))}
+        {entry('服務跟進', '成效管理', () => onFocus('follow'))}
+      </div>
+    </div>
+  )
+}
+
+const DEMO_NOTE = '示範值 · 尚無埋點資料源'
+
+function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }: {
+  /** 由族群卡帶入:只看該族群 */
+  catFilter: CatId | null
+  onClearCatFilter: () => void
+  onJumpList: (catId: CatId | null) => void
+  /** 由族群卡帶入:進頁後捲到 CTA / 服務跟進那張卡 */
+  focusView: 'cta' | 'follow' | null
+}) {
+  const [campaignId, setCampaignId] = useState<string>(CAMPAIGNS[0].id)
+  const [cadence, setCadence] = useState<Cadence>('weekly')
+  const ctaRef = useRef<HTMLDivElement | null>(null)
+  const followRef = useRef<HTMLDivElement | null>(null)
+
+  const campaign = CAMPAIGNS.find((c) => c.id === campaignId)!
+  const all = CAMPAIGN_MEMBERS[campaignId]
+  const rows = useMemo(() => (catFilter ? all.filter((m) => m.cat === catFilter) : all), [all, catFilter])
+  const summaries = useMemo(() => cadenceSummaries(rows), [rows])
+  const batch = useMemo(() => rows.filter((m) => m.cadence === cadence), [rows, cadence])
+  const funnel = useMemo(() => computeFunnel(batch), [batch])
+  const ctaPerf = useMemo(() => computeCtaPerf(batch), [batch])
+  const followPerf = useMemo(() => computeFollowPerf(batch), [batch])
+  const src = useMemo(() => listSource(rows), [rows])
+  const picked = summaries.find((s) => s.k === cadence)!
+  const catMeta = catFilter ? CATEGORIES.find((c) => c.id === catFilter) : null
+
+  const focus = (view: 'cta' | 'follow') => {
+    const el = view === 'cta' ? ctaRef.current : followRef.current
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+  /* 從族群卡帶 view 進來時捲到對應的卡 —— 那兩張在摺線以下,不捲等於沒反應 */
+  useEffect(() => {
+    if (focusView) focus(focusView)
+  }, [focusView, campaignId])
+
+  const clicked = batch.filter((m) => m.cta != null).length
+
+  return (
+    <>
+      {/* 方案選擇 */}
+      <div className="card" style={{ marginBottom: 16 }} {...batchAttrs('A.名單成效.方案總覽')}>
+        <div className="ch">
+          <div>
+            <h3>行銷方案</h3>
+            <div className="csub">名單依方案設定的族群範圍圈選,寄發頻率由分群推出(風險群週報 / 銅級乾燥月報 / 金銀級季報)</div>
+          </div>
+          <span style={{ fontSize: 10, color: 'var(--as-mute)', textAlign: 'right', maxWidth: 200 }}>
+            成效數字為示範 overlay · 正式版由報告產出引擎與 SF 回填
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          {CAMPAIGNS.map((c) => {
+            const on = c.id === campaignId
+            return (
+              <button
+                key={c.id}
+                onClick={() => setCampaignId(c.id)}
+                style={{
+                  padding: '8px 12px', borderRadius: 8, textAlign: 'left', font: 'inherit', cursor: 'pointer',
+                  border: `1px solid ${on ? 'var(--as-primary)' : 'var(--as-line)'}`,
+                  background: on ? 'var(--as-primary-bg, #E6F2EF)' : 'var(--as-card)',
+                  boxShadow: on ? '0 0 0 2px rgba(14,122,102,.18)' : undefined,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: on ? 'var(--as-primary)' : 'var(--as-ink)' }}>{c.name}</span>
+                  <span className={`pill ${c.status === 'active' ? 'g' : ''}`} style={{ fontSize: 9.5 }}>
+                    {c.status === 'active' ? '進行中' : '已結束'}
+                  </span>
+                </div>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 2 }}>{c.period} · {c.note}</div>
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--as-mute)', marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>
+            名單母體 <b className="mono">{src.fields.toLocaleString()}</b> 戶(與族群分析同源,可對帳)· 其中真實設備 {src.real} 戶
+          </span>
+          {catMeta && (
+            <button
+              className="btn"
+              onClick={onClearCatFilter}
+              style={{ padding: '2px 8px', fontSize: 10.5, color: catMeta.color, borderColor: `${catMeta.color}55` }}
+            >
+              僅看 {catMeta.id} {catMeta.code} ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 三批名單 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {summaries.map((s) => (
+          <CadenceCard
+            key={s.k} s={s} picked={cadence === s.k}
+            onPick={() => setCadence(s.k)}
+            onJumpList={() => onJumpList(catFilter)}
+            onFocus={(v) => { setCadence(s.k); focus(v) }}
+          />
+        ))}
+      </div>
+
+      {/* 選中批次的成效 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, margin: '22px 0 10px',
+        paddingTop: 16, borderTop: '1px solid var(--as-line)',
+      }}>
+        <span style={{
+          padding: '3px 10px', borderRadius: 999, background: picked.bg,
+          color: picked.color, fontSize: 12, fontWeight: 700,
+        }}>{campaign.name} · {picked.label}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-ink)' }}>成效管理</span>
+        <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{picked.size.toLocaleString()} 戶</span>
+      </div>
+
+      {picked.size === 0 ? (
+        <div className="card" style={{ padding: 28, textAlign: 'center', color: 'var(--as-mute)', fontSize: 12.5 }}>
+          此方案的名單範圍不含這一批 —— {campaign.name} 只收 {campaign.cohorts?.map((c) => CATEGORIES.find((x) => x.id === c)?.code).join('／')},故無{picked.label}批次。
+        </div>
+      ) : (
+        <>
+          {/* 需求 1:寄發成效 */}
+          <div className="card" {...batchAttrs('A.名單成效.寄發漏斗')}>
+            <div className="ch">
+              <div>
+                <h3>寄發漏斗</h3>
+                <div className="csub">名單 → 寄發 → 送達 → 開啟 → 點 CTA → 服務跟進成立</div>
+              </div>
+              <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{DEMO_NOTE}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+              {funnel.map((f) => (
+                <PerfBar
+                  key={f.k} label={f.label} sub={f.sub} n={f.n} pct={f.pct} color={f.color} unit="戶"
+                  right={f.stepPct == null ? undefined : `階段留存 ${f.stepPct}%`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="two-col" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginTop: 16 }}>
+            {/* 需求 2:報告內 CTA 環圈成效 */}
+            <div className="card" ref={ctaRef} {...batchAttrs('A.名單成效.CTA成效')}>
+              <div className="ch">
+                <div>
+                  <h3>CTA 行動成效</h3>
+                  <div className="csub">報告內 CTA 環圈點擊分布 · 共 {clicked.toLocaleString()} 次點擊</div>
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{DEMO_NOTE}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                {ctaPerf.map((c) => (
+                  <PerfBar
+                    key={c.k} label={c.label} sub={c.sub} n={c.clicks} pct={c.pct} color={c.color} unit="次"
+                    right={c.clicks === 0 ? undefined : `轉服務 ${c.followPct}%`}
+                  />
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 10 }}>
+                CTA 排序依族群痛點(報告環圈本來就照痛點排),不是平均分配
+              </div>
+            </div>
+
+            {/* 需求 3:服務跟進成效 */}
+            <div className="card" ref={followRef} {...batchAttrs('A.名單成效.服務跟進')}>
+              <div className="ch">
+                <div>
+                  <h3>服務跟進成效</h3>
+                  <div className="csub">母體為點過 CTA 的 {clicked.toLocaleString()} 戶 · 未點 CTA 沒有跟進的由頭</div>
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{DEMO_NOTE}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                {followPerf.map((f) => (
+                  <PerfBar key={f.k} label={f.label} sub={f.sub} n={f.n} pct={f.pct} color={f.color} unit="戶" />
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 10 }}>
+                正式版對回 SF:派工 Work__c / 送修 FailureReport__c / 維修完成 RepairOrder__c
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 /* ── ModuleA (root) ─────────────────────────────────── */
 /* 場域清單是自己一層(整體 → 分類 → 清單 → 個人),不再是個人層的 sub-tab。 */
-type ATab = 'overview' | 'segments' | 'list' | 'personal'
+type ATab = 'overview' | 'segments' | 'perf' | 'list' | 'personal'
 
 export function ModuleA() {
   const [tab, setTab] = useState<ATab>('overview')
@@ -3257,6 +3567,9 @@ export function ModuleA() {
   const [currentFieldId, setCurrentFieldId] = useState<string>('DEV-8065998DCAF0')
   // 場域清單類別篩選(由整體層 upsell 卡片點擊帶入)
   const [catFilter, setCatFilter] = useState<CatId | null>(null)
+  // 名單成效的族群鎖定與進頁焦點(由族群卡的 CTA / 服務跟進按鈕帶入)
+  const [perfCat, setPerfCat] = useState<CatId | null>(null)
+  const [perfView, setPerfView] = useState<'cta' | 'follow' | null>(null)
 
   const openDetailById = (fid: string) => {
     setCurrentFieldId(fid)
@@ -3270,9 +3583,17 @@ export function ModuleA() {
     setTab('list')
   }
 
+  /** 從族群卡的「CTA 行動 / 服務跟進」進入「名單成效」並鎖定族群 */
+  const openPerf = (cid: CatId, view: 'cta' | 'follow') => {
+    setPerfCat(cid)
+    setPerfView(view)
+    setTab('perf')
+  }
+
   const tabs = [
     { k: 'overview', l: '設備總覽' },
     { k: 'segments', l: '族群分析' },
+    { k: 'perf', l: '名單成效' },
     { k: 'list', l: '場域清單', n: 1284 },
     { k: 'personal', l: '個人場域資訊' },
   ]
@@ -3299,7 +3620,21 @@ export function ModuleA() {
           onJumpListByCategory={openCategoryList}
         />
       )}
-      {tab === 'segments' && <ASegments onOpenDetail={openDetailById} onJumpListByCategory={openCategoryList} />}
+      {tab === 'segments' && (
+        <ASegments
+          onOpenDetail={openDetailById}
+          onJumpListByCategory={openCategoryList}
+          onJumpPerfByCategory={openPerf}
+        />
+      )}
+      {tab === 'perf' && (
+        <AListPerformance
+          catFilter={perfCat}
+          onClearCatFilter={() => setPerfCat(null)}
+          onJumpList={(cid) => (cid ? openCategoryList(cid) : setTab('list'))}
+          focusView={perfView}
+        />
+      )}
       {tab === 'list' && (
         <AFieldList
           onSelect={openDetailById}
