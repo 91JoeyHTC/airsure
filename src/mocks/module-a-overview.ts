@@ -587,3 +587,95 @@ export const ALARM_CODES: { k: string; code: string; label: string; n: number; c
   { k: 'e6',  code: 'E6',  label: '水箱滿水超過 30 天', n: 12, color: VIZ_SERIES[3] },
   { k: 'cer', code: 'Cer', label: '機器曾傾倒',         n:  8, color: VIZ_SERIES[4] },
 ]
+
+/* ── 族群分析(原分類概況) ───────────────────────────────────────────────
+ * 七個族群各自的名單規模與四項分析,全部由母體篩該族群後即時算。 */
+
+/** 北中南分區。REGION_HEALTH 是縣市粒度,這裡再往上收一層。 */
+const ZONE_OF: Record<string, string> = {
+  臺北市: '北部', 新北市: '北部', 桃園市: '北部', 新竹縣市: '北部',
+  臺中市: '中部',
+  臺南市: '南部', 高雄市: '南部',
+  其他: '其他',
+}
+const ZONES = ['北部', '中部', '南部', '其他']
+
+/** 北中南佔比(以場域數計 —— 名單是按戶寄發的,不是按台) */
+export function computeZoneSplit(rows: FieldRecord[]): DonutSlice[] {
+  const raw = ZONES.map((z, i) => ({
+    k: z, label: z, sub: undefined as string | undefined,
+    n: rows.filter((f) => ZONE_OF[regionOfName(f.nm)] === z).length,
+    color: z === '其他' ? VIZ_MUTED : VIZ_SERIES[i],
+  }))
+  const total = raw.reduce((s, x) => s + x.n, 0)
+  return raw.map((x) => ({ ...x, pct: total === 0 ? 0 : Math.round((x.n / total) * 1000) / 10 }))
+}
+
+/* ── 優化方向 ─────────────────────────────────────────────────────────
+ * 不是文案,是從 P×H 矩陣反推出來的:這一群要往上走,PM2.5 或濕度得跨過哪一條線、
+ * 現在差多少。金級已經在矩陣頂端,改列健康度 TOP10。 */
+
+export interface OptimizeAxis {
+  k: string
+  /** 要動的軸 */
+  axis: 'PM2.5' | '濕度'
+  /** 跨過這條線就進下一級 */
+  target: string
+  /** 跨過去會變成哪一群 */
+  toLabel: string
+  /** 這一群裡有多少場域走這條路 */
+  n: number
+  /** 平均還差多少 */
+  gap: number
+  unit: string
+}
+
+const r0 = (v: number) => Math.round(v * 10) / 10
+
+export function computeOptimizeDirection(rows: FieldRecord[], cat: CatId, range: TimeRange): OptimizeAxis[] {
+  const m = rows.map((f) => metricsFor(f, range))
+  const out: OptimizeAxis[] = []
+  /** 收集一條改善路徑:哪些列適用、平均差距多少 */
+  const push = (
+    k: string, axis: OptimizeAxis['axis'], target: string, toLabel: string, unit: string,
+    applies: (x: FieldMetrics) => boolean, gapOf: (x: FieldMetrics) => number,
+  ) => {
+    const hit = m.filter(applies)
+    if (hit.length === 0) return
+    out.push({
+      k, axis, target, toLabel, unit,
+      n: hit.length,
+      gap: r0(hit.reduce((s, x) => s + gapOf(x), 0) / hit.length),
+    })
+  }
+
+  if (cat === '2') {
+    // 銀級:P2×H1 要把 PM2.5 壓到 ≤5;P1×H2 要把濕度壓到 ≤60
+    push('pm', 'PM2.5', '≤ 5 µg/m³', '金級空氣', 'µg/m³', (x) => x.pm > 5, (x) => x.pm - 5)
+    push('hu', '濕度', '≤ 60%', '金級空氣', '%', (x) => x.humidity > 60, (x) => x.humidity - 60)
+  } else if (cat === '3') {
+    // 銅級:P2×H2,兩條線都在;壓 PM2.5 進銀級,壓濕度也進銀級
+    push('pm', 'PM2.5', '≤ 5 µg/m³', '銀級空氣', 'µg/m³', (x) => x.pm > 5, (x) => x.pm - 5)
+    push('hu', '濕度', '≤ 60%', '銀級空氣', '%', (x) => x.humidity > 60, (x) => x.humidity - 60)
+  } else if (cat === '4') {
+    push('hu', '濕度', '≤ 60%', '金級／銀級空氣', '%', (x) => x.humidity > 60, (x) => x.humidity - 60)
+    push('hu2', '濕度', '≤ 65%', '銀級／銅級空氣', '%', (x) => x.humidity > 65, (x) => x.humidity - 65)
+  } else if (cat === '5') {
+    push('pm', 'PM2.5', '≤ 5 µg/m³', '金級／銀級空氣', 'µg/m³', (x) => x.pm > 5, (x) => x.pm - 5)
+    push('pm2', 'PM2.5', '≤ 12 µg/m³', '銀級／銅級空氣', 'µg/m³', (x) => x.pm > 12, (x) => x.pm - 12)
+  } else if (cat === '6') {
+    push('pm', 'PM2.5', '≤ 12 µg/m³', '濕度風險(單軸)', 'µg/m³', (x) => x.pm > 12, (x) => x.pm - 12)
+    push('hu', '濕度', '≤ 65%', '清淨風險(單軸)', '%', (x) => x.humidity > 65, (x) => x.humidity - 65)
+  } else if (cat === '7') {
+    push('hu', '濕度', '> 45%', '金級／銀級空氣', '%', (x) => x.humidity <= 45, (x) => 45 - x.humidity)
+  }
+  return out
+}
+
+/** 金級空氣沒有「往上」可走,改看誰最模範 —— AirCare 分數前 N 名 */
+export function topByScore(rows: FieldRecord[], range: TimeRange, n = 10): { f: FieldRecord; q: number }[] {
+  return rows
+    .map((f) => ({ f, q: metricsFor(f, range).q }))
+    .sort((a, b) => b.q - a.q)
+    .slice(0, n)
+}

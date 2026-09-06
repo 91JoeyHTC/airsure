@@ -11,9 +11,7 @@ import {
   REAL_FIELD_IDS,
   FIELD_DELTAS,
   REGION_HEALTH,
-  SITE_TYPES,
   AHI_TREND,
-  SEGMENTS_A,
   CATEGORIES,
   CATEGORY_DIST,
   DISPOSITION_ROLLUP,
@@ -57,6 +55,9 @@ import {
   computePartCycleDist,
   computeServiceTiming,
   computeAlarmKpi,
+  computeZoneSplit,
+  computeOptimizeDirection,
+  topByScore,
   ALARM_CODES,
   ALARM_CODE_SOURCE,
   LIFE_LEGEND,
@@ -65,6 +66,7 @@ import {
   type DonutSlice,
   type StackRow,
   type ServiceTier,
+  type TimeRange,
 } from '../../mocks/module-a-overview'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
 import type { DeviceReport } from '../../mocks/devices'
@@ -477,7 +479,9 @@ function DonutCard({ title, sub, note, slices, unit, batch }: {
             fontSize: 10, color: 'var(--as-mute)', paddingBottom: 4,
             borderBottom: '1px solid var(--as-line-2)',
           }}>
-            <span></span><span style={{ textAlign: 'right' }}>設備數</span><span style={{ textAlign: 'right', width: 44 }}>佔比</span>
+            <span></span>
+            <span style={{ textAlign: 'right' }}>{unit === '戶' ? '戶數' : '設備數'}</span>
+            <span style={{ textAlign: 'right', width: 44 }}>佔比</span>
           </div>
           {slices.map((x) => (
             <div
@@ -1355,223 +1359,248 @@ function AOverview({
 }
 
 /* ── 分群層 ─────────────────────────────────────────── */
-/** 把 FIELDS_A_FULL 的每筆對應到 SEGMENTS_A[segIndex] 的第幾個 group。 */
-function fieldGroupIndex(segIndex: number, f: FieldRecord): number {
-  if (segIndex === 0) {
-    // 耗材剩餘壽命:立即 < 20% / 近期 20–30% / 觀察 30–50% / 充足 ≥ 50%
-    if (f.minPct < 20) return 0
-    if (f.minPct < 30) return 1
-    if (f.minPct < 50) return 2
-    return 3
-  }
-  if (segIndex === 1) {
-    // 使用強度: 重度 ≥ 15h / 中度 8–15 / 輕度 < 8
-    if (f.hrs >= 15) return 0
-    if (f.hrs >= 8) return 1
-    return 2
-  }
-  if (segIndex === 2) {
-    // 水箱頻率 ≈ 由分群推導:④濕度風險/⑥雙風險 除濕需求高;⑤清淨風險與⑦乾燥 需求低
-    if (f.cat === '4' || f.cat === '6') return 0
-    if (f.cat === '5' || f.cat === '7') return 2
-    return 1
-  }
-  return 0
+/* 族群卡:名單規模 + 三個管理入口。
+ * 「寄發管理」與「顯示名單」都接到場域清單並套該族群篩選 —— 清單那邊本來就有
+ * 寄發狀態與九態;CTA 與服務跟進沒有資料源,做成不可點的佔位而不是死連結。 */
+function CohortCard({ meta, fields, devices, picked, onPick, onJumpList }: {
+  meta: CategoryMeta
+  fields: number
+  devices: number
+  picked: boolean
+  onPick: () => void
+  onJumpList: () => void
+}) {
+  const entry = (label: string, sub: string, enabled: boolean, onClick?: () => void) => (
+    <button
+      key={label}
+      disabled={!enabled}
+      onClick={enabled ? (e) => { e.stopPropagation(); onClick?.() } : undefined}
+      title={enabled ? undefined : '待接入:尚無此類資料源'}
+      style={{
+        flex: 1, minWidth: 0, padding: '7px 6px', borderRadius: 6, textAlign: 'center',
+        border: `1px solid ${meta.color}33`, background: enabled ? meta.bg : 'var(--as-line-2)',
+        color: enabled ? meta.color : 'var(--as-mute-2)', font: 'inherit',
+        cursor: enabled ? 'pointer' : 'not-allowed', lineHeight: 1.3,
+      }}
+    >
+      <div style={{ fontSize: 11.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 9.5, opacity: 0.85 }}>{enabled ? sub : '待接入'}</div>
+    </button>
+  )
+  return (
+    <div
+      className="card"
+      onClick={onPick}
+      style={{
+        cursor: 'pointer', padding: 14,
+        borderColor: picked ? meta.color : undefined,
+        boxShadow: picked ? `0 0 0 2px ${meta.color}33` : undefined,
+        transition: 'box-shadow .12s, border-color .12s',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              width: 20, height: 20, borderRadius: 5, background: meta.color, color: '#fff',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700, flex: 'none',
+            }}>{meta.id}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: meta.color }}>{meta.code}</span>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 3 }}>{meta.identity} · 對外「{meta.customer}」</div>
+        </div>
+        <button
+          className="rowbtn"
+          onClick={(e) => { e.stopPropagation(); onJumpList() }}
+          style={{ width: 'auto', height: 'auto', padding: '3px 9px', fontSize: 10.5, whiteSpace: 'nowrap', flex: 'none' }}
+        >
+          顯示名單
+        </button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, margin: '10px 0 2px' }}>
+        <span className="mono" style={{ fontSize: 30, fontWeight: 600, color: 'var(--as-ink)', lineHeight: 1 }}>
+          {fields.toLocaleString()}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>戶</span>
+        <span className="mono mute" style={{ fontSize: 11, marginLeft: 8 }}>{devices.toLocaleString()} 台</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+        {entry('寄發管理', '進場域清單', true, onJumpList)}
+        {entry('CTA 行動', '成效管理', false)}
+        {entry('服務跟進', '成效管理', false)}
+      </div>
+    </div>
+  )
 }
 
-function ASegments({ onOpenDetail }: { onOpenDetail: (fid: string) => void }) {
-  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+/* ── 族群分析(原「分類概況」,2026-09-04 更名並改版) ─────────────────────
+ * 版面依使用者提供的第八 / 第九屏:上方族群卡分「金銀銅」與「改善加強型」兩區,
+ * 點任一張在下方展開該群的四項分析與優化方向。乾燥列為第七張(v2 §3.4 的第七群,
+ * 兩張投影片都沒有它,但母體有 24 戶,不放會憑空消失)。 */
+const TIER_COHORTS: CatId[] = ['1', '2', '3']
+const IMPROVE_COHORTS: CatId[] = ['4', '5', '6', '7']
+
+function ASegments({ onOpenDetail, onJumpListByCategory }: {
+  onOpenDetail: (fid: string) => void
+  onJumpListByCategory: (catId: CatId) => void
+}) {
+  const [picked, setPicked] = useState<CatId>('1')
+  /* 族群分析看完整統計期,不吃設備總覽那組篩選(那是另一個 tab 的狀態) */
+  const range: TimeRange = '90d'
   const catMeta = (id: CatId) => CATEGORIES.find((c) => c.id === id)!
 
-  return (
+  const rowsOf = (id: CatId) => FIELDS_A_POP.filter((f) => f.cat === id)
+  const pickedRows = useMemo(() => rowsOf(picked), [picked])
+  const pickedMeta = catMeta(picked)
+
+  const zoneDist = useMemo(() => computeZoneSplit(pickedRows), [pickedRows])
+  const usageDist = useMemo(() => computeUsageDist(pickedRows), [pickedRows])
+  const modeDist = useMemo(() => computeModeDist(pickedRows), [pickedRows])
+  const cycleDist = useMemo(() => computePartCycleDist(pickedRows), [pickedRows])
+  const optimize = useMemo(() => computeOptimizeDirection(pickedRows, picked, range), [pickedRows, picked])
+  const top10 = useMemo(() => topByScore(pickedRows, range, 10), [pickedRows])
+
+  const devicesOf = (list: FieldRecord[]) => list.reduce((n, f) => n + f.devTotal, 0)
+  const cohortRow = (ids: CatId[], title: string, sub: string) => (
     <>
-      {/* 分群層 hero 已依 2026-05-29 PDF 拉掉 */}
-
-      {/* 2 欄 grid:分群卡 × 1(水箱)/ 場域類型分佈。
-          空氣品質、濕度控制、使用強度與耗材處理時機於 2026-09-03 移到「設備總覽」。 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
-        {/* 「依耗材剩餘壽命」(index 0)與「依使用強度」(index 1)已移到設備總覽,
-            這裡不再重複;si 仍是 SEGMENTS_A 的原始索引,fieldGroupIndex 才對得上。 */}
-        {SEGMENTS_A.map((s, si) => ({ s, si })).filter(({ si }) => si !== 0 && si !== 1).map(({ s, si }) => (
-          <div className="seg-card" key={s.title}>
-            <div className="sg-h">
-              <div>
-                <div className="sg-axis">{s.axis}</div>
-                <h3>{s.title}</h3>
-                <div className="sg-sub">{s.sub}</div>
-              </div>
-              <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>{s.groups.length} 群</span>
-            </div>
-            <div className="sg-stack">
-              {s.groups.map((g) => (
-                <div key={g.lbl} style={{ width: `${g.pct}%`, background: g.c, height: '100%' }}></div>
-              ))}
-            </div>
-            <div className="sg-legend">
-              {s.groups.map((g) => (
-                <span key={g.lbl}><span className="d" style={{ background: g.c }}></span>{g.pct}%</span>
-              ))}
-            </div>
-            <div className="sg-rows">
-              {s.groups.map((g, gi) => {
-                const key = `${si}-${gi}`
-                const expanded = expandedKey === key
-                const matched = FIELDS_A_FULL.filter((f) => fieldGroupIndex(si, f) === gi)
-                return (
-                  <Fragment key={g.lbl}>
-                    <div
-                      className="sg-r"
-                      style={{ cursor: 'pointer', background: expanded ? g.c + '0A' : undefined }}
-                      onClick={() => setExpandedKey(expanded ? null : key)}
-                    >
-                      <div className="sg-pct" style={{ background: g.c + '18', color: g.c, borderColor: g.c + '50' }}>{g.lbl}</div>
-                      <div className="sg-info">
-                        <div className="sg-traits">{g.traits}</div>
-                        <div className="sg-action"><Icon name="arrow" size={10} />{g.action}</div>
-                      </div>
-                      <div className="sg-num">
-                        <div className="v mono">{g.n.toLocaleString()}</div>
-                        <div className="l">設備</div>
-                      </div>
-                      <button
-                        className="rowbtn"
-                        onClick={(e) => { e.stopPropagation(); setExpandedKey(expanded ? null : key) }}
-                        style={{ transition: 'transform 0.2s', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                      >
-                        <Icon name="chevR" size={12} />
-                      </button>
-                    </div>
-                    {expanded && (
-                      <div style={{
-                        padding: '10px 12px 12px',
-                        background: g.c + '08',
-                        borderLeft: `3px solid ${g.c}`,
-                        marginLeft: 4,
-                        marginRight: 4,
-                        marginBottom: 4,
-                        borderRadius: '0 6px 6px 0',
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <div style={{ fontSize: 11, color: 'var(--as-mute)' }}>
-                            <Icon name="layers" size={11} /> 該條件下示範場域 · {matched.length} / 全體 {g.n.toLocaleString()} 台
-                          </div>
-                          <button className="btn" style={{ fontSize: 10, padding: '3px 8px' }}>
-                            <Icon name="download" size={10} />匯出本群名單
-                          </button>
-                        </div>
-                        {matched.length > 0 ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {matched.map((f) => {
-                              const m = catMeta(f.cat)
-                              return (
-                                <div
-                                  key={f.id}
-                                  onClick={(e) => { e.stopPropagation(); onOpenDetail(f.id) }}
-                                  style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '1.4fr 0.7fr 0.55fr 0.45fr 0.35fr 0.4fr 24px',
-                                    alignItems: 'center',
-                                    gap: 8,
-                                    padding: '8px 10px',
-                                    background: '#fff',
-                                    borderRadius: 6,
-                                    border: '1px solid var(--as-line-2)',
-                                    cursor: 'pointer',
-                                    fontSize: 11,
-                                  }}
-                                >
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, color: 'var(--as-ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                      {f.customerName}
-                                      {f.tier === 'g' && <span style={{ marginLeft: 6, fontSize: 9, color: '#B45309' }}>★</span>}
-                                    </div>
-                                    <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>{f.nm} · {f.addr}</div>
-                                  </div>
-                                  <span className="mono" style={{ color: 'var(--as-mute)', fontSize: 10 }}>{f.customerId}</span>
-                                  <span style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                                    fontSize: 10, padding: '2px 6px', borderRadius: 8,
-                                    background: m.bg, color: m.color, fontWeight: 600,
-                                    justifySelf: 'start',
-                                  }}>{m.id} {m.code}</span>
-                                  {si === 0 ? (
-                                    <span
-                                      className={`pill ${f.minPct < 20 ? 'r' : f.minPct < 30 ? 'y' : f.minPct < 50 ? '' : 'g'}`}
-                                      style={{ justifySelf: 'start', fontFamily: 'var(--f-mono)' }}
-                                      title={`最低耗材殘量 ${f.minPct}% · 預估 ${f.predictedDays} 天後需更換`}
-                                    >
-                                      {f.minPct}% / {f.predictedDays}d
-                                    </span>
-                                  ) : (
-                                    <span className={`pill ${f.q >= 85 ? 'g' : f.q >= 75 ? 'y' : 'r'}`} style={{ justifySelf: 'start' }}>
-                                      DHI {f.q}
-                                    </span>
-                                  )}
-                                  <span className="mono" style={{ color: 'var(--as-mute)' }}>{f.hrs}h</span>
-                                  <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{f.tier === 'g' ? '★ 高級' : '一般'}</span>
-                                  <Icon name="arrow" size={11} />
-                                </div>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div style={{ padding: 12, background: '#fff', borderRadius: 6, border: '1px dashed var(--as-line-2)', fontSize: 11, color: 'var(--as-mute)', textAlign: 'center' }}>
-                            目前示範資料(9 筆)無此分群場域 · 實際 {g.n.toLocaleString()} 台
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Fragment>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-
-        {/* 場域類型分佈 — 右下(grid 第 6 格) */}
-        <div className="seg-card">
-          <div className="sg-h">
-            <div>
-              <div className="sg-axis">類型</div>
-              <h3>場域類型分佈</h3>
-              <div className="sg-sub">依場域性質分類 · {SITE_TYPES.reduce((a, s) => a + s.n, 0).toLocaleString()} 場域</div>
-            </div>
-            <span className="csub" style={{ fontFamily: 'var(--f-mono)' }}>{SITE_TYPES.length} 類</span>
-          </div>
-          <div className="sg-stack">
-            {SITE_TYPES.map((s) => {
-              const total = SITE_TYPES.reduce((a, x) => a + x.n, 0)
-              const pct = Math.round((s.n / total) * 1000) / 10
-              return <div key={s.nm} style={{ width: `${pct}%`, background: s.c, height: '100%' }}></div>
-            })}
-          </div>
-          <div className="sg-legend">
-            {SITE_TYPES.map((s) => {
-              const total = SITE_TYPES.reduce((a, x) => a + x.n, 0)
-              const pct = Math.round((s.n / total) * 100)
-              return <span key={s.nm}><span className="d" style={{ background: s.c }}></span>{pct}%</span>
-            })}
-          </div>
-          <div className="sg-rows">
-            {SITE_TYPES.map((s) => {
-              return (
-                <div className="sg-r" key={s.nm}>
-                  <div className="sg-pct" style={{ background: s.c + '18', color: s.c, borderColor: s.c + '50' }}>{s.nm}</div>
-                  <div className="sg-info">
-                    <div className="sg-traits">{s.nm === '居家' ? '個人/家庭場域 · 高敏家庭為主' : s.nm === '辦公' ? '上班時段運轉 · 中度使用' : s.nm === '醫療' ? '無菌需求 · 長時運轉' : '營業場所 · 開店時段運轉'}</div>
-                    <div className="sg-action"><Icon name="arrow" size={10} />{s.nm === '居家' ? '健康證書 + 訂閱推薦' : s.nm === '辦公' ? 'B2B 服務合約' : s.nm === '醫療' ? '保固延長 + 多機部署' : '商用方案推薦'}</div>
-                  </div>
-                  <div className="sg-num">
-                    <div className="v mono">{s.n.toLocaleString()}</div>
-                    <div className="l">場域</div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '18px 0 8px' }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>{title}</h3>
+        <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>{sub}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${ids.length}, 1fr)`, gap: 12 }}>
+        {ids.map((id) => {
+          const list = rowsOf(id)
+          return (
+            <CohortCard
+              key={id} meta={catMeta(id)} fields={list.length} devices={devicesOf(list)}
+              picked={picked === id} onPick={() => setPicked(id)}
+              onJumpList={() => onJumpListByCategory(id)}
+            />
+          )
+        })}
       </div>
     </>
+  )
+
+  return (
+    <div {...batchAttrs('A.族群分析.族群卡')}>
+      {cohortRow(TIER_COHORTS, '金銀銅', 'v2 §3.5 可直接揭露的分群 · 主動寄發成績單 + 分享 / 續訂 CTA')}
+      {cohortRow(IMPROVE_COHORTS, '改善加強型', '內部建議方向 · 主動寄發預警與改善建議;對外一律以銅級揭露')}
+
+      {/* 選中族群的詳細分析 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, margin: '22px 0 10px',
+        paddingTop: 16, borderTop: '1px solid var(--as-line)',
+      }}>
+        <span style={{
+          padding: '3px 10px', borderRadius: 999, background: pickedMeta.bg,
+          color: pickedMeta.color, fontSize: 12, fontWeight: 700,
+        }}>{pickedMeta.id} {pickedMeta.code}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-ink)' }}>名單分析</span>
+        <span style={{ fontSize: 11, color: 'var(--as-mute)' }}>
+          {pickedRows.length.toLocaleString()} 戶 / {devicesOf(pickedRows).toLocaleString()} 台 · 近 90 天
+        </span>
+      </div>
+
+      <div className="two-col" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+        <DonutCard
+          batch="A.族群分析.北中南佔比" title="北中南佔比" unit="戶"
+          sub={`${pickedMeta.code} · 依場域所在縣市歸北 / 中 / 南`}
+          slices={zoneDist}
+        />
+        <DonutCard
+          batch="A.族群分析.使用強度" title="使用強度分析" unit="台"
+          sub={`日均運轉時數 · ${devicesOf(pickedRows).toLocaleString()} 台`}
+          note="門檻沿用設備總覽"
+          slices={usageDist}
+        />
+      </div>
+      <div className="two-col" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginTop: 16 }}>
+        <DonutCard
+          batch="A.族群分析.使用模式" title="使用模式分析" unit="台"
+          sub={`場域主要模式 · 以開機台數加權`}
+          note="風量分布母體尚無 fanSpeed 欄位,見設備總覽的示範值"
+          slices={modeDist}
+        />
+        <StackedPartsCard
+          batch="A.族群分析.濾網更換週期" title="濾網更換週期分析"
+          sub={`容量時數 ÷ 日均運轉時數 · ${devicesOf(pickedRows).toLocaleString()} 台`}
+          note="級距依各類耗材不同,標在各條下方"
+          rows={cycleDist}
+        />
+      </div>
+
+      {/* 優化方向 / 健康度 TOP10 —— 金級已在矩陣頂端,沒有「往上」可走 */}
+      <div className="card" style={{ marginTop: 16 }} {...batchAttrs('A.族群分析.優化方向')}>
+        <div className="ch">
+          <div>
+            <h3>{picked === '1' ? '健康度 TOP 10' : `${pickedMeta.code} → 優化方向分析`}</h3>
+            <div className="csub">
+              {picked === '1'
+                ? 'AirCare 分數前 10 名 · 可作為成績單與分享 CTA 的示範戶'
+                : '由 v2 §3.4 的 P×H 矩陣反推:要跨到下一級,哪一軸得動、現在差多少'}
+            </div>
+          </div>
+        </div>
+        {picked === '1' ? (
+          <div className="rank" style={{ marginTop: 8 }}>
+            {top10.map((t, i) => (
+              <div className="rk" key={t.f.id} style={{ cursor: 'pointer' }} onClick={() => onOpenDetail(t.f.id)}>
+                <div className={`rk-rk ${i < 3 ? 'gold' : ''}`}>{i + 1}</div>
+                <div className="rk-nm">
+                  {t.f.customerName}
+                  <div className="rk-sub">
+                    <span className="mono" style={{ marginRight: 6 }}>{t.f.customerId}</span>
+                    {t.f.nm} · 日均 {t.f.hrs}h
+                  </div>
+                </div>
+                <div className="rk-bar"><div className="rk-tr"><div className="rk-fi" style={{ width: `${t.q}%` }}></div></div></div>
+                <div className="rk-v">{t.q}<span className="u">/100</span></div>
+              </div>
+            ))}
+          </div>
+        ) : optimize.length === 0 ? (
+          <div style={{ padding: '18px 0', fontSize: 12, color: 'var(--as-mute)', textAlign: 'center' }}>
+            這一群目前沒有可跨級的改善路徑。
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+            {optimize.map((o) => (
+              <div key={o.k} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 12px', background: 'var(--as-bg)', borderRadius: 8,
+              }}>
+                <span style={{
+                  padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, flex: 'none',
+                  background: o.axis === 'PM2.5' ? '#FFE4D6' : '#E0F2FE',
+                  color: o.axis === 'PM2.5' ? '#EA580C' : '#0284C7',
+                }}>{o.axis}</span>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--as-ink-2)' }}>
+                  降到 <b style={{ color: 'var(--as-ink)' }}>{o.target}</b> 可進
+                  <b style={{ color: 'var(--as-ink)' }}>{o.toLabel}</b>
+                  <div style={{ fontSize: 10.5, color: 'var(--as-mute)', marginTop: 2 }}>
+                    <Icon name="arrow" size={10} />
+                    建議行動:{o.axis === 'PM2.5' ? '推 CS 系列清淨主打 / 提高風量與運轉時數' : '推 CS 系列除濕主打 / 提醒倒水與連續除濕'}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flex: 'none' }}>
+                  <div className="mono" style={{ fontSize: 15, fontWeight: 600, color: 'var(--as-ink)' }}>{o.n.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>戶</div>
+                </div>
+                <div style={{ textAlign: 'right', flex: 'none', width: 84 }}>
+                  <div className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--as-danger)' }}>
+                    {o.gap}
+                    <span style={{ fontSize: 9, color: 'var(--as-mute)', fontWeight: 400, marginLeft: 2 }}>{o.unit}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--as-mute)' }}>平均差距</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -3208,7 +3237,7 @@ function ALocationDetail({
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn" onClick={onJumpOverview}><Icon name="chart" size={13} />回設備總覽</button>
-            <button className="btn" onClick={onJumpSegments}><Icon name="layers" size={13} />同分群比較</button>
+            <button className="btn" onClick={onJumpSegments}><Icon name="layers" size={13} />族群分析</button>
             <button className="btn" onClick={onBackToList}><Icon name="menu" size={13} />回場域清單</button>
           </div>
         </div>
@@ -3243,7 +3272,7 @@ export function ModuleA() {
 
   const tabs = [
     { k: 'overview', l: '設備總覽' },
-    { k: 'segments', l: '分類概況' },
+    { k: 'segments', l: '族群分析' },
     { k: 'list', l: '場域清單', n: 1284 },
     { k: 'personal', l: '個人場域資訊' },
   ]
@@ -3270,7 +3299,7 @@ export function ModuleA() {
           onJumpListByCategory={openCategoryList}
         />
       )}
-      {tab === 'segments' && <ASegments onOpenDetail={openDetailById} />}
+      {tab === 'segments' && <ASegments onOpenDetail={openDetailById} onJumpListByCategory={openCategoryList} />}
       {tab === 'list' && (
         <AFieldList
           onSelect={openDetailById}
