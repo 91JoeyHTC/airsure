@@ -21,13 +21,20 @@ export type Cadence = 'weekly' | 'monthly' | 'quarterly'
 export type CtaId = 'inspect' | 'filter' | 'dehumid' | 'upgrade' | 'maintain'
 export type FollowUpState = 'none' | 'contacted' | 'scheduled' | 'done'
 
-export const CADENCE_META: { k: Cadence; label: string; sub: string; color: string; bg: string }[] = [
-  { k: 'weekly',    label: '週報', sub: '風險三群 · 密集跟進', color: '#C2410C', bg: '#FFEDD5' },
-  { k: 'monthly',   label: '月報', sub: '銅級／乾燥 · 月度節奏', color: '#B45309', bg: '#FEF3C7' },
-  { k: 'quarterly', label: '季報', sub: '金級／銀級 · 季度回顧', color: '#9F1239', bg: '#FFE4E6' },
+/* 2026-09-08 決策 1(docs/dispatch-data-model-spec.md §1):
+ * 週報/月報是「另一種 report_type」,但內容與 CTA 尚未定義 ——
+ * 所以目前全名單一律以季報寄發,週/月只保留「規劃中」的預分派結果,不給成效。
+ * 把成效掛在不存在的 report_type 上就是編造。內容定案後才把 planned 拿掉。 */
+export const CADENCE_META: { k: Cadence; label: string; sub: string; color: string; bg: string; planned: boolean }[] = [
+  { k: 'weekly',    label: '週報', sub: '風險三群 · 密集跟進',   color: '#C2410C', bg: '#FFEDD5', planned: true },
+  { k: 'monthly',   label: '月報', sub: '銅級／乾燥 · 月度節奏', color: '#B45309', bg: '#FEF3C7', planned: true },
+  { k: 'quarterly', label: '季報', sub: '目前唯一的 report_type', color: '#9F1239', bg: '#FFE4E6', planned: false },
 ]
 
-/** 寄發頻率由分群推出,不是另外貼上去的標籤(見 plan 項目 2) */
+/** 目前實際寄發的頻率。決策 1:只有季報存在。 */
+export const ACTIVE_CADENCE: Cadence = 'quarterly'
+
+/** 未來的預分派(頻率由分群推出),週/月報內容定案後才會生效 */
 const CADENCE_OF_CAT: Record<CatId, Cadence> = {
   '4': 'weekly', '5': 'weekly', '6': 'weekly',
   '3': 'monthly', '7': 'monthly',
@@ -59,7 +66,7 @@ export interface CampaignMeta {
   note: string
 }
 
-/** 名單一列 = 一個場域在某方案下的一筆寄發(名單按戶寄發,不是按台) */
+/** 名單一列 = 一個場域在某方案下的一筆寄發(決策 2:一戶一次,內含多份設備報告) */
 export interface ListMember {
   fieldId: string
   nm: string
@@ -67,7 +74,10 @@ export interface ListMember {
   cat: CatId
   /** 非真實設備的示範列 */
   isDemo: boolean
-  cadence: Cadence
+  /** 未來的預分派頻率(週/月報上線後生效) */
+  plannedCadence: Cadence
+  /** 決策 3:未達報告資料門檻的仍留在名單內,只是寄不出去 */
+  eligible: boolean
   /* ↓ 以下全是示範 overlay,無資料源 */
   sent: boolean
   delivered: boolean
@@ -135,11 +145,13 @@ function buildMembers(c: CampaignMeta): ListMember[] {
   for (const f of FIELDS_A_POP as FieldRecord[]) {
     const cat = f.cat
     if (c.cohorts && !c.cohorts.includes(cat)) continue
-    const cadence = CADENCE_OF_CAT[cat]
-    const rate = RATES[cadence]
+    const rate = RATES[ACTIVE_CADENCE]
     const id = f.id
-    /* 進行中的方案還沒寄完;已結束的方案全部寄出 */
-    const sent = c.status === 'closed' || seeded(c.id, id, 'sent') < 0.82
+    /* 決策 3:未達門檻的留在名單內。約 15% 未達標 —— 這個比例是示範假設,
+     * 正式版由中台的 campaign_member.eligible 回填。 */
+    const eligible = seeded(c.id, id, 'gate') < 0.85
+    /* 進行中的方案還沒寄完;已結束的方案全部寄出。未達門檻的一律寄不出去。 */
+    const sent = eligible && (c.status === 'closed' || seeded(c.id, id, 'sent') < 0.82)
     const delivered = sent && seeded(c.id, id, 'deliver') < rate.delivered
     const opened = delivered && seeded(c.id, id, 'open') < rate.opened
     const clicked = opened && seeded(c.id, id, 'cta') < rate.cta
@@ -151,7 +163,7 @@ function buildMembers(c: CampaignMeta): ListMember[] {
     }
     out.push({
       fieldId: id, nm: f.nm, customerId: f.customerId, cat, isDemo: isDemoField(f),
-      cadence, sent, delivered, opened, cta, follow,
+      plannedCadence: CADENCE_OF_CAT[cat], eligible, sent, delivered, opened, cta, follow,
     })
   }
   return out
@@ -176,7 +188,9 @@ export interface CadenceSummary {
   sub: string
   color: string
   bg: string
-  /** 名單戶數 */
+  /** true = 週/月報,report_type 尚未定義,只有規劃戶數沒有成效(決策 1) */
+  planned: boolean
+  /** 名單戶數。季報 = 全名單(目前全部走季報);週/月 = 未來的預分派規模 */
   size: number
   sent: number
   opened: number
@@ -187,14 +201,17 @@ export interface CadenceSummary {
 
 export function cadenceSummaries(rows: ListMember[]): CadenceSummary[] {
   return CADENCE_META.map((m) => {
-    const inCad = rows.filter((x) => x.cadence === m.k)
+    /* 規劃中的批次只給預分派規模,成效一律 0 —— 那個 report_type 還不存在 */
+    if (m.planned) {
+      return { ...m, size: rows.filter((x) => x.plannedCadence === m.k).length, sent: 0, opened: 0, clicked: 0, followed: 0 }
+    }
     return {
       ...m,
-      size: inCad.length,
-      sent: inCad.filter((x) => x.sent).length,
-      opened: inCad.filter((x) => x.opened).length,
-      clicked: inCad.filter((x) => x.cta != null).length,
-      followed: inCad.filter((x) => x.follow !== 'none').length,
+      size: rows.length,
+      sent: rows.filter((x) => x.sent).length,
+      opened: rows.filter((x) => x.opened).length,
+      clicked: rows.filter((x) => x.cta != null).length,
+      followed: rows.filter((x) => x.follow !== 'none').length,
     }
   })
 }
@@ -215,10 +232,11 @@ export interface FunnelStep {
 
 export function computeFunnel(rows: ListMember[]): FunnelStep[] {
   const defs: { k: string; label: string; sub: string; hit: (m: ListMember) => boolean }[] = [
-    { k: 'list',      label: '名單',         sub: '該批寄發對象',         hit: () => true },
+    { k: 'list',      label: '名單',         sub: '含未達門檻(決策 3)',   hit: () => true },
+    { k: 'eligible',  label: '可產製',       sub: '資料已達 90 天門檻',    hit: (m) => m.eligible },
     { k: 'sent',      label: '已寄發',       sub: 'LINE / Email 送出',    hit: (m) => m.sent },
     { k: 'delivered', label: '已送達',       sub: '未退信 / 未封鎖',      hit: (m) => m.delivered },
-    { k: 'opened',    label: '已開啟',       sub: '報告被點開',           hit: (m) => m.opened },
+    { k: 'opened',    label: '已開啟',       sub: '報告連結被點開',        hit: (m) => m.opened },
     { k: 'cta',       label: '點 CTA',       sub: '報告內環圈被點擊',      hit: (m) => m.cta != null },
     { k: 'follow',    label: '服務跟進成立', sub: '已聯繫 / 排程 / 完成',  hit: (m) => m.follow !== 'none' },
   ]
@@ -246,12 +264,15 @@ export interface CtaPerf {
   clicks: number
   /** 佔所有點擊的百分比 */
   pct: number
+  /** 決策 8:點擊數 ÷ 打開報告數 */
+  rateOfOpens: number
   /** 點了這個 CTA 之後成立服務跟進的比率 */
   followPct: number
 }
 
 export function computeCtaPerf(rows: ListMember[]): CtaPerf[] {
   const clicked = rows.filter((m) => m.cta != null)
+  const opens = rows.filter((m) => m.opened).length
   return CTA_META.map((m) => {
     const hit = clicked.filter((x) => x.cta === m.k)
     const followed = hit.filter((x) => x.follow !== 'none').length
@@ -259,9 +280,17 @@ export function computeCtaPerf(rows: ListMember[]): CtaPerf[] {
       ...m,
       clicks: hit.length,
       pct: clicked.length === 0 ? 0 : Math.round((hit.length / clicked.length) * 1000) / 10,
+      rateOfOpens: opens === 0 ? 0 : Math.round((hit.length / opens) * 1000) / 10,
       followPct: hit.length === 0 ? 0 : Math.round((followed / hit.length) * 1000) / 10,
     }
   }).sort((a, b) => b.clicks - a.clicks)
+}
+
+/** 決策 8:CTA 互動率 = 點擊互動數 ÷ 打開報告次數 */
+export function ctaInteractionRate(rows: ListMember[]): { clicks: number; opens: number; pct: number } {
+  const clicks = rows.filter((m) => m.cta != null).length
+  const opens = rows.filter((m) => m.opened).length
+  return { clicks, opens, pct: opens === 0 ? 0 : Math.round((clicks / opens) * 1000) / 10 }
 }
 
 /* ── 服務跟進成效(需求 3) ─────────────────────────────────────────── */

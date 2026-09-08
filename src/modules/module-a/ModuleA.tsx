@@ -3268,8 +3268,11 @@ function ALocationDetail({
  * 寄發、報告內 CTA 環圈點擊、服務跟進三段成效。
  * Plan:docs/module-a-list-performance-plan.md
  *
- * 名單母體與族群分析同源(FIELDS_A_POP),所以週報戶數 = ④+⑤+⑥ 的族群卡戶數,
- * 兩個 tab 可以對帳。⚠ 成效事件全是示範 overlay,沒有資料源。 */
+ * 名單母體與族群分析同源(FIELDS_A_POP),所以預分派戶數可與族群卡對帳
+ * (規劃中的週報 = ④+⑤+⑥、月報 = ③+⑦)。
+ * 2026-09-08 決策 1:目前唯一存在的 report_type 是季報,全名單皆以季報寄發;
+ * 週/月報只顯示預分派規模,不給成效(見 docs/dispatch-data-model-spec.md)。
+ * ⚠ 成效事件全是示範 overlay,沒有資料源。 */
 
 /** 三張成效卡共用的橫條列:標籤 + 條 + 右側數值 */
 function PerfBar({ label, sub, n, pct, color, right, unit }: {
@@ -3385,7 +3388,9 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
   const all = CAMPAIGN_MEMBERS[campaignId]
   const rows = useMemo(() => (catFilter ? all.filter((m) => m.cat === catFilter) : all), [all, catFilter])
   const summaries = useMemo(() => cadenceSummaries(rows), [rows])
-  const batch = useMemo(() => rows.filter((m) => m.cadence === cadence), [rows, cadence])
+  /* 決策 1:目前全名單一律以季報寄發,所以選中的批次就是整份名單。
+   * 週/月報的 report_type 定案後,改回依 m.cadence 篩。 */
+  const batch = rows
   const funnel = useMemo(() => computeFunnel(batch), [batch])
   const ctaPerf = useMemo(() => computeCtaPerf(batch), [batch])
   const followPerf = useMemo(() => computeFollowPerf(batch), [batch])
@@ -3411,7 +3416,10 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
         <div className="ch">
           <div>
             <h3>行銷方案</h3>
-            <div className="csub">名單依方案設定的族群範圍圈選,寄發頻率由分群推出(風險群週報 / 銅級乾燥月報 / 金銀級季報)</div>
+            <div className="csub">
+              名單依方案設定的族群範圍圈選。目前唯一存在的 report_type 是季報,全名單皆以季報寄發;
+              週／月報的內容與 CTA 待定義,卡片只顯示預分派規模
+            </div>
           </div>
           <span style={{ fontSize: 10, color: 'var(--as-mute)', textAlign: 'right', maxWidth: 200 }}>
             成效數字為示範 overlay · 正式版由報告產出引擎與 SF 回填
@@ -3445,6 +3453,7 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
         <div style={{ fontSize: 11, color: 'var(--as-mute)', marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span>
             名單母體 <b className="mono">{src.fields.toLocaleString()}</b> 戶(與族群分析同源,可對帳)· 其中真實設備 {src.real} 戶
+            · 未達報告門檻的仍留在名單內,於漏斗第二階呈現流失
           </span>
           {catMeta && (
             <button
