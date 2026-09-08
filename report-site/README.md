@@ -8,10 +8,11 @@
 | 有 | 沒有 |
 |---|---|
 | 一顆 CTA（設定倒水提醒）的點擊追蹤 | 其餘兩顆 CTA、四顆分享按鈕 |
-| 302 轉址（不依賴 JS） | 報告開啟事件（`/e/open`） |
-| 通路辨識 `?ch=line/sms/email`（伺服器端接到 CTA 上） | 預抓取過濾 |
-| 不可猜 8 碼 token | token 期效／撤銷 |
-| 事件寫入 D1 | 字型內嵌（報告仍載 Google Fonts） |
+| 302 轉址（不依賴 JS） | 字型內嵌（報告仍載 Google Fonts） |
+| 通路辨識 `?ch=line/sms/email`（伺服器端接到 CTA 上） | 預抓取的**過濾規則**（原始資料留著，規則未定） |
+| 報告開啟事件（伺服器端 + beacon 兩筆） | 開啟事件去重 |
+| 不可猜 8 碼 token | token 期效／撤銷、rate limit |
+| 事件寫入 D1 | |
 
 ## 怎麼測試
 
@@ -52,6 +53,7 @@ npx wrangler d1 execute aircare-report --local --command "DELETE FROM cta_click"
 | 3a | 若 `ch` 是空的 | 報告網址忘了帶 `?ch=`。通路是從**報告網址**接到按鈕上的，不是按鈕自己帶的 |
 | 4 | 把網址的 token 改一個字元再開 | **404** —— 若看到首頁，是 `public/404.html` 不見了，見設計決策 |
 | 5 | 換 `?ch=sms` 再點一次 | D1 多一筆，`ch=sms` |
+| 6 | 查開啟事件（見下方指令） | 每開一次報告會有 **兩筆**：`source=server` 與 `source=beacon` |
 
 查事件：
 
@@ -59,6 +61,25 @@ npx wrangler d1 execute aircare-report --local --command "DELETE FROM cta_click"
 npx wrangler d1 execute aircare-report --local \
   --command "SELECT id, cta_id, ch, substr(ua,1,40) ua, clicked_at FROM cta_click ORDER BY id"
 ```
+
+查開啟事件：
+
+```bash
+npx wrangler d1 execute aircare-report --local \
+  --command "SELECT id, ch, source, substr(ua,1,40) ua, opened_at FROM report_open ORDER BY id"
+```
+
+**只有 `server` 沒有 `beacon` 的，幾乎都是預抓取**（LINE／簡訊 App／Email 客戶端做連結預覽）。
+不過濾的話第一天的開啟率會漂亮得不真實（計畫 §6.3）。分辨用：
+
+```bash
+npx wrangler d1 execute aircare-report --local \
+  --command "SELECT token, ch, substr(ua,1,45) ua,
+             sum(source='server') 伺服器, sum(source='beacon') 真跑起來
+             FROM report_open GROUP BY token, ch, ua ORDER BY 真跑起來"
+```
+
+原型**不內建**過濾規則 —— 原始 UA 全留著，規則日後可重算（計畫 §3.1 F6）。
 
 ### 手機測試（重要）
 
@@ -80,6 +101,7 @@ npx wrangler pages dev public --port 8788 --d1 DB=aircare-report --ip 0.0.0.0
 - [ ] D1 出現對應的一筆，`ch` 正確
 - [ ] token 改一個字元 → 404
 - [ ] 不同 `?ch=` 記成不同通路
+- [ ] 開一次報告 → `report_open` 有 `server` 與 `beacon` 各一筆
 - [ ] 終端機 A 全程沒有 `insert failed`
 
 ### 重新上架一份
@@ -98,7 +120,8 @@ node scripts/build-index.mjs
 ## 檔案
 
 ```
-functions/r/[token].js         GET /r/<token>?ch=… → 送報告，並把 ch 接到報告裡的 CTA 上
+functions/r/[token].js         GET /r/<token>?ch=… → 記 report_open(server)、把 ch 接到 CTA、注入 beacon
+functions/e/open.js            POST /e/open → 記 report_open(beacon)，頁面真的跑起來才會送
 functions/c/[token]/[cta].js   GET /c/<token>/<cta> → 寫 cta_click 後 302
 public/index.html              首頁：已上架報告一覽（build-index.mjs 產出，不進版控，正式版沒有這頁）
 public/404.html                找不到頁面。**不能刪**，原因見下方設計決策
@@ -107,7 +130,7 @@ public/r/<token>.html          上架後的報告（publish.mjs 產出，不進�
 reports/manifest.json          token → 客戶編號/MAC（正式版要進 D1）
 scripts/publish.mjs            上架處理：產 token、注入追蹤連結、檢查外部資源
 scripts/build-index.mjs        產首頁；publish.mjs 會自動叫，也可單獨跑
-schema.sql                     cta_click 一張表
+schema.sql                     cta_click / report_open 兩張表
 ```
 
 ## 設計決策
@@ -117,6 +140,8 @@ schema.sql                     cta_click 一張表
 **通路在伺服器端接上，不用前端 JS** —— 報告是靜態檔，CTA 的 href 寫死成 `/c/<token>/<cta>`，本身不知道客戶從哪個通路點進來。`functions/r/[token].js` 在送出報告時用 HTMLRewriter 把 `?ch=` 補進去。理由與 CTA 走 302 相同：LINE 內建瀏覽器／轉傳情境下 JS 不一定跑得到，通路歸因不該賭這個。`ch` 只認 `line/sms/email`，其餘忽略（會被寫進 HTML 屬性）。
 
 **`public/404.html` 是必要的，不是裝飾** —— 有了 `index.html` 之後，Pages 會拿首頁當「找不到」的 fallback 並回 200。這會讓打錯的 token 落到首頁，而首頁列著所有客戶編號。有 `404.html` 才會正確回 404。刪掉它 = 錯 token 變成客戶清單的入口。
+
+**開啟事件記兩筆，不是一筆** —— 伺服器端那筆不依賴 JS，關掉 JS、內建瀏覽器都記得到，但預覽器的預抓取也會混進來；beacon 那筆要頁面真的在瀏覽器跑起來才送，預抓取通常不執行 JS。兩筆對照才分得出真開啟，任一種單獨用都會把開啟率算錯。實測 `facebookexternalhit` 只留下 server 那筆，正是要抓的樣子。
 
 **寫事件失敗仍要轉址** —— 追蹤壞掉不該擋住客戶的行動，所以 insert 包在 try/catch 裡。代價是失敗會靜靜地發生，只在 server log 看得到。
 
@@ -130,5 +155,6 @@ schema.sql                     cta_click 一張表
 2. **token 對照在 JSON 檔**，不是 D1。
 3. **目的地寫死在函式裡** —— 正式版應由設定決定，才能不改報告就換活動頁。
 4. **沒有 rate limit** —— 正式版要防 token 掃描。
-5. **`/c/` 不驗 token** —— 任意 token 都會寫進 `cta_click` 並轉址（只有 `/r/` 會 404）。正式版要對照 token 表，否則掃描會灌髒資料。
-6. `public/r/*.html` 含客戶編號（證書編號與分享卡），屬輕度個資，token 即憑證。
+5. **開啟事件沒去重** —— 同一人重整三次就是三筆。算開啟率前要先按 token 收斂。
+6. **`/c/` 不驗 token** —— 任意 token 都會寫進 `cta_click` 並轉址（只有 `/r/` 會 404）。正式版要對照 token 表，否則掃描會灌髒資料。
+7. `public/r/*.html` 含客戶編號（證書編號與分享卡），屬輕度個資，token 即憑證。
