@@ -13,30 +13,80 @@
 | 不可猜 8 碼 token | token 期效／撤銷 |
 | 事件寫入 D1 | 字型內嵌（報告仍載 Google Fonts） |
 
-## 怎麼跑
+## 怎麼測試
+
+### 準備：開兩個終端機
+
+**終端機 A —— 服務（測試期間要一直開著）**
 
 ```bash
-cd report-site
-
-# 1. 建本機 D1 的表（只需一次）
-npx wrangler d1 execute aircare-report --local --file=schema.sql
-
-# 2. 上架一份報告（會產 token 並注入追蹤連結）
-node scripts/publish.mjs <原始報告.html> <客戶編號> <設備MAC>
-
-# 3. 起本機服務
+cd ~/repos/airsure/report-site
 npx wrangler pages dev public --port 8788 --d1 DB=aircare-report
-
-# 4. 開上一步印出的網址，點「設定倒水提醒」
-
-# 5. 查事件
-npx wrangler d1 execute aircare-report --local \
-  --command "SELECT * FROM cta_click ORDER BY id"
 ```
 
-> ⚠ `--d1 DB=aircare-report` 這個參數不能省 —— `pages dev` 不會自動吃 `wrangler.toml` 的 D1 綁定，
-> 省略會讓 `env.DB` 是 undefined，事件靜靜地寫不進去（函式有 try/catch，客戶端不會有感覺）。
-> 另外 `wrangler.toml` 的 `database_id` 必須與 `--d1` 的名稱一致，否則 `d1 execute` 與 dev server 會指到**兩個不同的本機 DB**。
+啟動後**先確認這一行有出現**：
+
+```
+env.DB (local-DB=aircare-report)   D1 Database   local
+```
+
+> ⚠ 沒看到就是 `--d1` 漏了。這時報告照樣打得開、按鈕照樣會轉址，**但事件一筆都不會寫進去**
+> （函式有 try/catch，只有終端機 A 會印 `insert failed`）。這是最容易誤判「測試通過」的地方。
+
+**終端機 B —— 查資料**
+
+```bash
+cd ~/repos/airsure/report-site
+
+# 清掉先前的測試資料,讓待會自己點的那一筆不會混淆
+npx wrangler d1 execute aircare-report --local --command "DELETE FROM cta_click"
+```
+
+### 測試步驟
+
+| # | 做什麼 | 應該看到 |
+|---|---|---|
+| 1 | 瀏覽器開 `http://localhost:8788/r/<token>?ch=line` | 完整的報告頁（`<token>` 見 `reports/manifest.json`） |
+| 2 | 捲到 **Ch.03 你的行動清單**，點橘色的「**設定倒水提醒 →**」 | 跳到綠色的「✅ 轉址成功」頁，顯示 `來源 CTA: tank` / `通路: line` |
+| 3 | 終端機 B 查事件（見下方指令） | 出現一筆 `cta_id=tank`、`ch=line`、`ua` 是你的瀏覽器 |
+| 4 | 把網址的 token 改一個字元再開 | **404** |
+| 5 | 換 `?ch=sms` 再點一次 | D1 多一筆，`ch=sms` |
+
+查事件：
+
+```bash
+npx wrangler d1 execute aircare-report --local \
+  --command "SELECT id, cta_id, ch, substr(ua,1,40) ua, clicked_at FROM cta_click ORDER BY id"
+```
+
+### 手機測試（重要）
+
+客戶多半在 LINE 內建瀏覽器用手機開，**桌機測過不代表手機沒問題**。讓區網其他裝置連得到：
+
+```bash
+npx wrangler pages dev public --port 8788 --d1 DB=aircare-report --ip 0.0.0.0
+```
+
+然後手機連同一個 Wi-Fi，開 `http://<你電腦的區網IP>:8788/r/<token>?ch=line`
+（查 IP：`ipconfig getifaddr en0`）
+
+手機上要特別看：版面有沒有跑掉、**字型載入前後版面會不會跳**（報告還在載 Google Fonts）、按鈕好不好按。
+
+### 驗收清單
+
+- [ ] 報告完整顯示，桌機與手機都正常
+- [ ] 點按鈕會跳到轉址成功頁，且 CTA 與通路顯示正確
+- [ ] D1 出現對應的一筆，`ch` 正確
+- [ ] token 改一個字元 → 404
+- [ ] 不同 `?ch=` 記成不同通路
+- [ ] 終端機 A 全程沒有 `insert failed`
+
+### 重新上架一份
+
+```bash
+node scripts/publish.mjs <原始報告.html> <客戶編號> <設備MAC>
+# 會產新 token、印出網址,並警告仍引用的外部資源
+```
 
 ## 檔案
 
