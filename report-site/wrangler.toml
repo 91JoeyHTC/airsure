@@ -1,0 +1,9 @@
+name = "aircare-report-site"
+compatibility_date = "2026-09-08"
+pages_build_output_dir = "public"
+
+# 原型用本機 D1。正式環境的 database_id 由工程師在 Cloudflare 建立後填入。
+[[d1_databases]]
+binding = "DB"
+database_name = "aircare-report"
+database_id = "aircare-report"

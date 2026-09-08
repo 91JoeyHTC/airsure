@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-TW"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>轉址成功 · 原型測試頁</title>
+<style>
+body{font-family:-apple-system,"PingFang TC",sans-serif;background:#faf8f3;color:#1a2330;
+     display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
+.box{background:#fff;border:1px solid #d4cfc2;border-radius:8px;padding:36px;max-width:460px;text-align:center}
+h1{font-size:22px;margin:0 0 12px;color:#134731}
+code{background:#e8f1ec;padding:2px 8px;border-radius:4px;font-size:14px}
+p{color:#4a5568;line-height:1.8;font-size:14px}
+</style></head><body>
+<div class="box">
+  <h1>✅ 轉址成功</h1>
+  <p>這是原型的假目的地。正式版這裡會是實際的活動頁 / 預約表單 / LINE。</p>
+  <p>來源 CTA：<code id="from">—</code><br>通路：<code id="ch">—</code></p>
+  <p style="font-size:12px;color:#8794a3">點擊事件應該已寫入 D1 的 <code>cta_click</code>。</p>
+</div>
+<script>
+  const q = new URLSearchParams(location.search)
+  document.getElementById('from').textContent = q.get('from') || '—'
+  document.getElementById('ch').textContent = q.get('ch') || '(未帶)'
+</script>
+</body></html>

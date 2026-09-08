@@ -1,0 +1,6 @@
+.wrangler/
+node_modules/
+# 上架產出的報告含客戶資料,不進版控
+public/r/*.html
+# token 對照含客戶編號
+reports/manifest.json
