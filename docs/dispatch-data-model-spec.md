@@ -17,7 +17,7 @@
 | 2 | Dispatch 顆粒度 | **一戶一次寄發，內含多份設備報告**（Dispatch 掛客戶層，`report_id` 為多筆） |
 | 3 | 未達門檻的客戶 | **進名單**；漏斗要呈現「未達門檻・寄不出」這一段流失 |
 | 4 | 九態 ⑦⑧ 與 Dispatch 誰是真相 | **Dispatch 存事件為唯一真相**；場域清單九態的 ⑦已寄發／⑧已開啟由該客戶**最新一筆 Dispatch 推導，不另外落地** |
-| 5 | 通路與狀態 | **拆成 `channel` + `state` 兩欄**，不再像現況 `SendState` 混在一個 enum |
+| 5 | 通路與狀態 | **拆成 `channel` + `state` 兩欄**，不再像現況 `SendState` 混在一個 enum。`channel` = **`line` / `sms` / `email`**（2026-09-08 補：沒有 LINE 的客戶走簡訊 + Email） |
 | 6 | `opened` 的定義 | **報告連結被點開**即算已開啟（不採用 Email open pixel） |
 | 7 | 通路狀態來源（電子豹） | **保留待討論**，見 §2 |
 | 8 | CTA 成效口徑 | 分子 = 點擊互動數，**分母 = 打開報告數（去重戶數，見 8b）** |
@@ -30,6 +30,12 @@
 | — | 名單快照 | **方案啟動時凍結名單成員**（分母穩定可比）；**每次寄發重算寄發資格**（門檻可能剛好達標） |
 | — | 保留期限 | **2 年**（季報要看去年同期） |
 | — | 寄發節流 | **同一客戶同週最多一封** |
+
+### 2026-09-18 首批寄送
+
+首批 30–60 位手動挑選、三通路人工寄送的落地計畫另見 **`docs/aircare-0918-報告寄送計畫.md`**。
+該版刻意不接通路 API（決策 7 保留中），漏斗只做「開啟 → CTA → 服務跟進」，
+事件寫入 Cloudflare D1 而非中台 —— 中台目前無資料庫、無寫入端點。
 
 ### ⚠ 到時候要補充：週報／月報
 
@@ -63,7 +69,7 @@
 
 ### 2.2 討論時要決定的五件事
 
-1. **範圍**：電子豹只管 Email。**LINE 通路要另外接**（LINE Messaging API 的 delivery／read），兩條通路的狀態語意要統一到同一組 `state`。
+1. **範圍**：電子豹只管 Email。**LINE 要接 Messaging API**（delivery／read）、**簡訊要接簡訊商 API**，三條通路的狀態語意要統一到同一組 `state`。
 2. **哪些欄位以電子豹為準**：建議 `sent` / `delivered` / `bounced` / `unsubscribed` 用電子豹。
    ⚠ **`opened` 不要用電子豹的 open pixel** —— 依決策 6，已開啟的定義是「報告連結被點開」，那是我們自己的埋點。兩者不可混用，否則 Apple Mail Privacy Protection 會讓開啟率虛高。
 3. **對帳鍵**：電子豹的 message id 要能對回我們的 `dispatch_id`（用自訂欄位或 tag 帶過去），否則回來的事件無法歸戶。
@@ -101,11 +107,11 @@ dispatch                      一次寄發 = 一戶一次(決策 2)
   id                PK
   campaign_member_id FK
   report_type                  決策 1
-  channel                      line | email          ← 決策 5
+  channel                      line | sms | email    ← 決策 5
   state                        queued | sent | delivered | bounced
                                | unsubscribed | opened
   sent_at / delivered_at / opened_at                 ← opened 見決策 6
-  external_id                  電子豹 message id / LINE request id(決策 7)
+  external_id                  電子豹 message id / LINE request id / 簡訊商 message id(決策 7)
   attempt_no                   重試次數
 
 dispatch_report               一次寄發夾帶的設備報告(決策 2:一戶多份)
@@ -189,7 +195,7 @@ follow_up                     服務跟進歸因(決策 9、10)
       "reports": [{ "report_id": "r_8891", "device_code": "AC-****-A" }],
       "latest_dispatch": {
         "channel": "email", "state": "opened",
-        "sent_at": "2026-10-03T09:12:00+08:00",
+        "sent_at": "2026-10-03T09:12:00+08:00",   // channel: line | sms | email
         "opened_at": "2026-10-03T21:40:00+08:00"
       },
       "cta_clicks": [{ "cta_id": "filter", "clicked_at": "2026-10-03T21:41:12+08:00" }],
