@@ -82,6 +82,7 @@ import {
   type TimeRange,
 } from '../../mocks/module-a-overview'
 import { DEVICE_BY_FIELD_ID } from '../../mocks/devices'
+import { FIELD_DETAILS } from '../../mocks/module-a'
 import type { DeviceReport } from '../../mocks/devices'
 import { AFieldList } from './AFieldList'
 
@@ -2965,6 +2966,27 @@ function AirScoreCards({ detail }: { detail: FieldDetail }) {
   )
 }
 
+/* 場域詳情的資料來源標示(2026-09-08)。
+ * 三種來源差很多,但畫面長得一樣 —— 不標的話,1,280 個示範場域的 PM2.5 趨勢、
+ * 溫濕度曲線其實全都是借第一台真實設備的同一條線,拿去 demo 會誤導。 */
+function DetailSource({ fieldId }: { fieldId: string }) {
+  if (DEVICE_BY_FIELD_ID[fieldId]) return null          // 真實設備報告,不用標
+  const curated = !!FIELD_DETAILS[fieldId]
+  return (
+    <div style={{
+      margin: '0 0 12px', padding: '7px 11px', borderRadius: 7,
+      background: curated ? '#FEF3C7' : '#FEE2E2',
+      border: `1px solid ${curated ? '#FDE68A' : '#FCA5A5'}`,
+      fontSize: 11, color: 'var(--as-ink-2)', display: 'flex', alignItems: 'center', gap: 7,
+    }}>
+      <Icon name="alert-triangle" size={13} />
+      {curated
+        ? <span><b>示範場域</b> —— 本頁為手工示範資料,非真實量測。空氣品質／使用行為／濾網／水箱四個分頁無內容(需設備分析報告)。</span>
+        : <span><b>示範場域 · 曲線為借用</b> —— 客戶、分數、分群取自母體,但趨勢圖與熱力圖是借第一台真實設備的序列,<b>不代表本場域</b>。四個分頁無內容(需設備分析報告)。</span>}
+    </div>
+  )
+}
+
 function ALocationDetail({
   fieldId,
   onBackToList,
@@ -2997,6 +3019,7 @@ function ALocationDetail({
 
   return (
     <>
+      <DetailSource fieldId={fieldId} />
       {/* ── Hero 場域識別卡 ───────────────────── */}
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }} {...batchAttrs('A.個人.場域詳情')}>
         <div style={{ background: `linear-gradient(135deg, ${catMeta.color}18 0%, ${catMeta.color}08 60%, #fff 100%)`, padding: 18, position: 'relative' }}>
@@ -3653,8 +3676,14 @@ export function ModuleA() {
       sub="雙核心 · 三層級場域監控"
       actions={
         <>
-          <button className="btn"><Icon name="download" size={14} />匯出</button>
-          <button className="btn primary"><Icon name="plus" size={14} />新增場域</button>
+          {/* 2026-09-08:這兩顆從未接上行為。匯出改在場域清單內做(挑名單摘要條),
+              新增場域本版不做 —— 標示待接入而不是留著點了沒反應。 */}
+          <button className="btn" disabled title="匯出改在「場域清單」勾選後從摘要條匯出" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+            <Icon name="download" size={14} />匯出
+          </button>
+          <button className="btn primary" disabled title="待接入" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+            <Icon name="plus" size={14} />新增場域
+          </button>
         </>
       }
       tabs={tabs}

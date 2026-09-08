@@ -510,16 +510,21 @@ export function computeKpi(rows: ReportCustomerRow[]) {
 }
 
 /* ── 狀態篩選 chip(規格 §4 清單頁) ─────────────────────────────── */
-export type ReportFilterKey = 'all' | 'ready' | 'need-profile' | 'insufficient' | 'overdue'
+export type ReportFilterKey = 'all' | 'selectable' | 'ready' | 'need-profile' | 'insufficient' | 'overdue'
 
 /** 該客戶是否有任一台設備落在指定狀態(清單以客戶為列,狀態以設備為準) */
 export function matchesFilter(row: ReportCustomerRow, k: ReportFilterKey): boolean {
   if (k === 'all') return true
+  /* 「可挑選」是挑名單用的視角,刻意忽略輪廓(2026-09-08 決策):
+   * 中台尚未回傳 SF「成員困擾」,72 台真實設備全卡在②待補輪廓,用九態去篩會篩不到人。
+   * 輪廓缺了報告仍能產,只是少一段個人化內容 —— 所以這裡只排除①資料未達標。 */
+  if (k === 'selectable') return row.devices.some((d) => d.state !== 'insufficient')
   return row.devices.some((d) => d.state === k)
 }
 
 const FILTER_LABELS: Array<{ k: ReportFilterKey; label: string }> = [
   { k: 'all',          label: '全部' },
+  { k: 'selectable',   label: '可挑選' },
   { k: 'ready',        label: '可產製' },
   { k: 'need-profile', label: '待補輪廓' },
   { k: 'insufficient', label: '資料未達標' },
@@ -530,4 +535,57 @@ const FILTER_LABELS: Array<{ k: ReportFilterKey; label: string }> = [
  *  同樣要吃已套用 SF 輪廓的列,否則會與表格燈號不一致。 */
 export function computeFilters(rows: ReportCustomerRow[]): Array<{ k: ReportFilterKey; label: string; n: number }> {
   return FILTER_LABELS.map(({ k, label }) => ({ k, label, n: rows.filter((r) => matchesFilter(r, k)).length }))
+}
+
+
+/* ── 挑名單匯出(2026-09-18 首批寄送)────────────────────────────────
+ * 一台設備一列,交給報告產生器用。
+ * ⚠ MAC 是內部主鍵(畫面上一律以遮蔽代號顯示),匯出檔屬對內用途,不得外流;
+ *   地址只到路名層級,與 eligible-customers.ts 的落地原則一致(AGENTS.md §7)。 */
+
+export interface PickRow {
+  customerId: string
+  /** 非 AIRCARE 合格清單上的示範列 —— 產報告時要排除 */
+  isDemo: boolean
+  deviceCode: string
+  /** 合格清單才有;示範列為空字串 */
+  mac: string
+  model: string
+  orderNo: string
+  city: string
+  area: string
+  road: string
+  sensorDays: number
+  /** 是否已有設備分析報告(有的才有分群與指數) */
+  hasReport: boolean
+  state: ReportState
+}
+
+/** 把選取的客戶展開成「一台設備一列」,並補回 MAC 與地址(列上沒有這兩欄) */
+export function pickRowsOf(rows: ReportCustomerRow[], customerIds: string[]): PickRow[] {
+  const want = new Set(customerIds)
+  const out: PickRow[] = []
+  for (const r of rows) {
+    if (!want.has(r.customerId)) continue
+    const eligible = ELIGIBLE_BY_CUSTOMER[r.customerId] ?? []
+    r.devices.forEach((d, i) => {
+      /* 以訂單號對回合格清單;示範列對不到,MAC 留空並由 isDemo 標示 */
+      const e = eligible.find((x) => x.orderNo === d.orderNo) ?? eligible[i]
+      out.push({
+        customerId: r.customerId,
+        isDemo: r.isDemo,
+        deviceCode: d.code,
+        mac: e?.mac ?? '',
+        model: d.model,
+        orderNo: d.orderNo ?? '',
+        city: e?.city ?? '',
+        area: e?.area ?? '',
+        road: e?.road ?? '',
+        sensorDays: d.sensorDays,
+        hasReport: d.fieldId != null,
+        state: d.state,
+      })
+    })
+  }
+  return out
 }

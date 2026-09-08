@@ -25,11 +25,13 @@ import {
   TIER_DOT,
   tierOfCat,
   matchesFilter,
+  pickRowsOf,
   type ReportFilterKey,
   type ReportCustomerRow,
   type ReportDeviceRow,
   type ReportState,
   type KpiSplit,
+  type PickRow,
 } from '../../mocks/module-a-report'
 
 /* KPI 的真實/示範分子。清單同時有 AIRCARE 合格清單的真實客戶與 9 筆示範,
@@ -78,12 +80,15 @@ function ActionButton({ state }: { state: ReportState }) {
   return (
     <button
       className={`rowbtn${m.primary ? ' on' : ''}`}
-      disabled={state === 'insufficient'}
+      /* 2026-09-08:本版 AirSure 是檢視台,產製與寄發走人工流程(見
+         docs/aircare-0918-報告寄送計畫.md §9)。按鈕保留以呈現九態的動作語意,
+         但一律停用 —— 點了沒反應會讓人以為系統壞掉。 */
+      disabled
+      title="待接入:本版為檢視台,產製與寄發為人工流程"
       style={{
         fontSize: 11, padding: '4px 9px', width: 'auto', height: 'auto', whiteSpace: 'nowrap',
-        ...(state === 'insufficient' ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+        opacity: 0.45, cursor: 'not-allowed',
       }}
-      onClick={(e) => e.stopPropagation()}
     >
       {m.action}
     </button>
@@ -162,7 +167,7 @@ function DeviceRow({ d, isDemo, onSelect }: { d: ReportDeviceRow; isDemo: boolea
 
 /* ── 客戶列 ───────────────────────────────────────────── */
 function CustomerRow({
-  row, expanded, onToggle, onSelect, live, resolving,
+  row, expanded, onToggle, onSelect, live, resolving, picked, onPick,
 }: {
   /** 已套用 SF 輪廓的列(放行動作在 AFieldList 統一做,KPI/chip 才會與燈號同源) */
   row: ReportCustomerRow
@@ -172,6 +177,9 @@ function CustomerRow({
   /** 由客戶編號向中台即時解析到的 Salesforce 會員(查不到為 null) */
   live: MemberHit | null
   resolving: boolean
+  /** 挑名單:是否已選入寄送名單 */
+  picked: boolean
+  onPick: () => void
 }) {
   const multi = row.devices.length > 1
   const first = row.devices[0]
@@ -190,7 +198,9 @@ function CustomerRow({
         style={{ cursor: row.fieldId ? 'pointer' : 'default' }}
         onClick={() => row.fieldId && onSelect(row.fieldId)}
       >
-        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" /></td>
+        <td onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={picked} onChange={onPick} title="加入寄送名單" />
+        </td>
         <td>
           <div className={name ? 'dt-nm' : 'dt-nm mono'} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {name ?? row.customerId}
@@ -285,6 +295,45 @@ function CustomerRow({
   )
 }
 
+/* ── 挑名單匯出(2026-09-18 首批寄送)──────────────────────────────
+ * 選取以「客戶」為單位(決策 2:一戶一次寄發,內含多份設備報告),
+ * 匯出時展開成一台設備一列交給報告產生器。 */
+
+const CSV_COLS: { k: keyof PickRow; label: string }[] = [
+  { k: 'customerId', label: '客戶編號' },
+  { k: 'mac', label: '設備MAC' },
+  { k: 'orderNo', label: '訂單號' },
+  { k: 'model', label: '機型' },
+  { k: 'city', label: '縣市' },
+  { k: 'area', label: '行政區' },
+  { k: 'road', label: '路名' },
+  { k: 'sensorDays', label: '有效感測天數' },
+  { k: 'hasReport', label: '已有報告' },
+  { k: 'isDemo', label: '示範列' },
+  { k: 'state', label: '報告狀態' },
+]
+
+function downloadPickCsv(picks: PickRow[]) {
+  const cell = (v: unknown) => {
+    const t = typeof v === 'boolean' ? (v ? 'Y' : 'N') : String(v ?? '')
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+  }
+  const lines = [
+    CSV_COLS.map((c) => c.label).join(','),
+    ...picks.map((p) => CSV_COLS.map((c) => cell(p[c.k])).join(',')),
+  ]
+  /* BOM 讓 Excel 正確辨識 UTF-8,否則中文欄位會變亂碼 */
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const d = new Date()
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  a.href = url
+  a.download = `aircare-寄送名單-${stamp}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /* ── 場域清單 ─────────────────────────────────────────── */
 export function AFieldList({
   onSelect,
@@ -299,6 +348,8 @@ export function AFieldList({
   const [filter, setFilter] = useState<ReportFilterKey>('all')
   const [expanded, setExpanded] = useState<string[]>([])
   const [page, setPage] = useState(0)
+  /* 挑名單:選取以客戶為單位,跨頁保留 */
+  const [picked, setPicked] = useState<string[]>([])
 
   /* 向中台解析「全部真實列」而不是只解析當頁 —— KPI 四格與狀態 chip 是整份母體的
    * 數字,只解析當頁會讓它們少算可產製、多算待補輪廓,與表格上的燈號對不起來。
@@ -328,6 +379,17 @@ export function AFieldList({
 
   const toggle = (id: string) =>
     setExpanded((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+
+  /* 挑名單 —— 全選作用在「目前篩選結果」而不是當頁,否則翻頁會以為選丟了 */
+  const pickedSet = new Set(picked)
+  const filteredIds = rows.map((r) => r.customerId)
+  const allPicked = filteredIds.length > 0 && filteredIds.every((id) => pickedSet.has(id))
+  const togglePick = (id: string) =>
+    setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const toggleAll = () =>
+    setPicked((prev) => (allPicked ? prev.filter((id) => !filteredIds.includes(id)) : [...new Set([...prev, ...filteredIds])]))
+  const pickRows = pickRowsOf(liveRows, picked)
+  const pickedDemo = new Set(pickRows.filter((p) => p.isDemo).map((p) => p.customerId)).size
 
   const goto = (p: number) => {
     setPage(p)
@@ -383,6 +445,33 @@ export function AFieldList({
         </span>
       </div>
 
+      {/* 挑名單摘要條 —— 2026-09-18 首批寄送。沒選任何人時不佔版面。 */}
+      {picked.length > 0 && (
+        <div style={{
+          marginTop: 12, padding: '9px 12px', borderRadius: 8,
+          background: 'var(--as-primary-bg, #E6F2EF)', border: '1px solid var(--as-primary)',
+          display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 12,
+        }}>
+          <Icon name="check" size={13} />
+          <span>
+            已選 <b className="mono">{picked.length}</b> 位客戶 ·
+            <b className="mono"> {pickRows.length}</b> 台設備
+            <span style={{ color: 'var(--as-mute)' }}>（一戶一次寄發，內含多份設備報告）</span>
+          </span>
+          {pickedDemo > 0 && (
+            <span style={{ color: '#B45309' }}>
+              ⚠ 含 {pickedDemo} 位示範客戶（無 MAC，產報告時請排除）
+            </span>
+          )}
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={() => setPicked([])}>清除</button>
+            <button className="btn primary" onClick={() => downloadPickCsv(pickRows)}>
+              <Icon name="download" size={13} />匯出名單 CSV
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* 狀態篩選 —— 規格 §4 */}
       <div className="fb" style={{ marginTop: 16 }}>
         {filters.map((f) => (
@@ -391,6 +480,7 @@ export function AFieldList({
             className={`chip ${f.k === filter ? 'on' : ''}`}
             style={{ cursor: 'pointer' }}
             onClick={() => setFilter(f.k)}
+            title={f.k === 'selectable' ? '挑名單用:只排除「資料未達標」,忽略輪廓(中台尚未回傳 SF 成員困擾)' : undefined}
           >
             {f.label}<span className="n">{f.n}</span>
           </span>
@@ -416,7 +506,14 @@ export function AFieldList({
         <table className="dt">
           <thead>
             <tr>
-              <th style={{ width: 28 }}><input type="checkbox" /></th>
+              <th style={{ width: 28 }}>
+                <input
+                  type="checkbox"
+                  checked={allPicked}
+                  onChange={toggleAll}
+                  title={allPicked ? '取消選取目前篩選結果' : `選取目前篩選結果的 ${filteredIds.length} 位客戶`}
+                />
+              </th>
               <th>客戶 / 代號</th>
               <th>輪廓</th>
               <th>設備</th>
@@ -438,6 +535,8 @@ export function AFieldList({
                   expanded={expanded.includes(r.customerId)}
                   onToggle={() => toggle(r.customerId)}
                   onSelect={onSelect}
+                  picked={pickedSet.has(r.customerId)}
+                  onPick={() => togglePick(r.customerId)}
                   live={byCode[r.customerId] ?? null}
                   resolving={resolving}
                 />
