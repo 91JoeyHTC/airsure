@@ -12,7 +12,9 @@ import {
   computeFunnel,
   computeCtaPerf,
   computeFollowPerf,
+  ctaInteractionRate,
   listSource,
+  ACTIVE_CADENCE,
   type Cadence,
   type CadenceSummary,
 } from '../../mocks/module-a-campaign'
@@ -3327,6 +3329,30 @@ function CadenceCard({ s, picked, onPick, onJumpList, onFocus }: {
     </button>
   )
   const empty = s.size === 0
+  /* 決策 1:週/月報的 report_type 尚未定義,只給規劃規模,不給成效也不可選 */
+  if (s.planned) {
+    return (
+      <div className="card" style={{ padding: 14, opacity: 0.72 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--as-mute)' }}>{s.label}</div>
+            <div style={{ fontSize: 10, color: 'var(--as-mute-2)', marginTop: 3 }}>{s.sub}</div>
+          </div>
+          <span className="pill" style={{ fontSize: 9.5, flex: 'none' }}>規劃中</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, margin: '10px 0 2px' }}>
+          <span className="mono" style={{ fontSize: 30, fontWeight: 600, color: 'var(--as-mute)', lineHeight: 1 }}>
+            {s.size.toLocaleString()}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--as-mute-2)' }}>戶(預分派)</span>
+        </div>
+        <div style={{ fontSize: 10.5, color: 'var(--as-mute)', marginTop: 8, lineHeight: 1.5 }}>
+          週／月報是另一種 report_type,內容與 CTA 尚未定義,目前全名單一律以季報寄發。
+          定案後才會有成效數字。
+        </div>
+      </div>
+    )
+  }
   return (
     <div
       className="card"
@@ -3380,7 +3406,7 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
   focusView: 'cta' | 'follow' | null
 }) {
   const [campaignId, setCampaignId] = useState<string>(CAMPAIGNS[0].id)
-  const [cadence, setCadence] = useState<Cadence>('weekly')
+  const [cadence, setCadence] = useState<Cadence>(ACTIVE_CADENCE)
   const ctaRef = useRef<HTMLDivElement | null>(null)
   const followRef = useRef<HTMLDivElement | null>(null)
 
@@ -3408,6 +3434,7 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
   }, [focusView, campaignId])
 
   const clicked = batch.filter((m) => m.cta != null).length
+  const interaction = useMemo(() => ctaInteractionRate(batch), [batch])
 
   return (
     <>
@@ -3445,7 +3472,9 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
                     {c.status === 'active' ? '進行中' : '已結束'}
                   </span>
                 </div>
-                <div className="mono" style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 2 }}>{c.period} · {c.note}</div>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 2 }}>
+                  {c.period} · 名單 {c.frozenAt} 凍結 · {c.note}
+                </div>
               </button>
             )
           })}
@@ -3503,7 +3532,7 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
             <div className="ch">
               <div>
                 <h3>寄發漏斗</h3>
-                <div className="csub">名單 → 寄發 → 送達 → 開啟 → 點 CTA → 服務跟進成立</div>
+                <div className="csub">名單 → 可產製 → 寄發 → 送達 → 開啟 → 點 CTA → 服務跟進成立</div>
               </div>
               <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{DEMO_NOTE}</span>
             </div>
@@ -3515,6 +3544,11 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
                 />
               ))}
             </div>
+            <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 10, lineHeight: 1.5 }}>
+              資料源:名單／可產製由中台、已開啟與點 CTA 由報告埋點、服務跟進由 SF ——
+              皆已定案。<b>已寄發／已送達兩階的通路資料源(電子豹 Email / LINE)保留待討論</b>,
+              未定前這兩階仍為示範值。
+            </div>
           </div>
 
           <div className="two-col" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginTop: 16 }}>
@@ -3523,7 +3557,9 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
               <div className="ch">
                 <div>
                   <h3>CTA 行動成效</h3>
-                  <div className="csub">報告內 CTA 環圈點擊分布 · 共 {clicked.toLocaleString()} 次點擊</div>
+                  <div className="csub">
+                    互動率 <b className="mono">{interaction.pct}%</b> = 點擊 {interaction.clicks.toLocaleString()} ÷ 打開報告 {interaction.opens.toLocaleString()} 戶(去重)
+                  </div>
                 </div>
                 <span style={{ fontSize: 10, color: 'var(--as-mute)' }}>{DEMO_NOTE}</span>
               </div>
@@ -3531,12 +3567,13 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
                 {ctaPerf.map((c) => (
                   <PerfBar
                     key={c.k} label={c.label} sub={c.sub} n={c.clicks} pct={c.pct} color={c.color} unit="次"
-                    right={c.clicks === 0 ? undefined : `轉服務 ${c.followPct}%`}
+                    right={c.clicks === 0 ? undefined : `佔開啟 ${c.rateOfOpens}% · 轉服務 ${c.followPct}%`}
                   />
                 ))}
               </div>
               <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 10 }}>
-                CTA 排序依族群痛點(報告環圈本來就照痛點排),不是平均分配
+                口徑:分母為打開報告的去重戶數(報告連結被點開即算已開啟)。中台正式版會同時回
+                opens 事件數與 unique_opens,互動率一律用後者 · CTA 排序依族群痛點,不是平均分配
               </div>
             </div>
 
@@ -3555,6 +3592,7 @@ function AListPerformance({ catFilter, onClearCatFilter, onJumpList, focusView }
                 ))}
               </div>
               <div style={{ fontSize: 10, color: 'var(--as-mute)', marginTop: 10 }}>
+                歸因:CTA 點擊後 7 天內成立的服務單,同一戶多次點擊歸最近一次;未點 CTA 直接來電不計入。
                 正式版對回 SF:派工 Work__c / 送修 FailureReport__c / 維修完成 RepairOrder__c
               </div>
             </div>

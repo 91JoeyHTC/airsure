@@ -132,7 +132,13 @@ export function primaryProfile(profiles: ProfileId[]): ProfileId | null {
   return profiles[0] ?? null
 }
 
-/* ── 寄發狀態(規格 §7) ──────────────────────────────────────────── */
+/* ── 寄發狀態(規格 §7) ────────────────────────────────────────────
+ * ⚠ 2026-09-08 決策 4(docs/dispatch-data-model-spec.md §1):
+ *   接上中台後,寄發狀態的唯一真相是 dispatch 事件表,這一欄與九態的 ⑦已寄發 /
+ *   ⑧已開啟 都要改成「由該客戶最新一筆 dispatch 推導」,不再各自落地,
+ *   否則會出現「清單顯示未寄、名單成效顯示已開啟」。
+ *   同時 channel 與 state 要拆成兩欄(決策 5)—— 現在這個 enum 把「用哪個通路」
+ *   和「到哪一步」混在一起,無法表達「已寄 Email 且已開啟」。 */
 export type SendState = 'none' | 'line' | 'email' | 'opened'
 
 export const SEND_META: Record<SendState, { label: string; color: string }> = {

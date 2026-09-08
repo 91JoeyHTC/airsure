@@ -63,6 +63,9 @@ export interface CampaignMeta {
   status: 'active' | 'closed'
   /** 這個方案只收哪些族群;null = 全收 */
   cohorts: CatId[] | null
+  /* 決策(2026-09-08):名單成員在方案啟動時凍結,分母才穩定可比;
+   * 但寄發資格(eligible)每次寄發重算 —— 門檻有可能剛好達標。 */
+  frozenAt: string
   note: string
 }
 
@@ -91,13 +94,13 @@ export interface ListMember {
 export const CAMPAIGNS: CampaignMeta[] = [
   {
     id: 'c202610', name: '2026.10 噴噴方案', period: '2026/10/01–10/31', status: 'active',
-    cohorts: null, note: '全族群 · 依風險度派週/月/季報',
+    cohorts: null, frozenAt: '2026/10/01', note: '全族群 · 名單已凍結',
   },
   {
     /* 乾燥也是濕度問題(太乾,搭配加濕建議),所以收 ⑦ —— 方案名用「濕度改善」
      * 而不是「除濕」,否則收乾燥群會自相矛盾。①②③⑤ 不在名單內,故無季報批次。 */
     id: 'c202607', name: '2026.07 濕度改善方案', period: '2026/07/01–07/31', status: 'closed',
-    cohorts: ['4', '6', '7'], note: '只收濕度相關族群(含乾燥) · 無季報批次',
+    cohorts: ['4', '6', '7'], frozenAt: '2026/07/01', note: '只收濕度相關族群(含乾燥)',
   },
 ]
 
@@ -286,7 +289,9 @@ export function computeCtaPerf(rows: ListMember[]): CtaPerf[] {
   }).sort((a, b) => b.clicks - a.clicks)
 }
 
-/** 決策 8:CTA 互動率 = 點擊互動數 ÷ 打開報告次數 */
+/** 決策 8 + 8b:CTA 互動率 = 點擊互動數 ÷ 打開報告的「去重戶數」。
+ * 中台正式版會同時回 opens(事件數)與 unique_opens(去重);互動率一律用後者,
+ * 否則同一人開五次會把互動率稀釋成五分之一。前端 mock 一戶一筆,天然是去重值。 */
 export function ctaInteractionRate(rows: ListMember[]): { clicks: number; opens: number; pct: number } {
   const clicks = rows.filter((m) => m.cta != null).length
   const opens = rows.filter((m) => m.opened).length
