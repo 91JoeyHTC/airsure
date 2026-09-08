@@ -4,3 +4,5 @@ node_modules/
 public/r/*.html
 # token 對照含客戶編號
 reports/manifest.json
+# 首頁列出已上架報告,含客戶編號
+public/index.html

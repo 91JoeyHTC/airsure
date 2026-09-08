@@ -9,7 +9,7 @@
 |---|---|
 | 一顆 CTA（設定倒水提醒）的點擊追蹤 | 其餘兩顆 CTA、四顆分享按鈕 |
 | 302 轉址（不依賴 JS） | 報告開啟事件（`/e/open`） |
-| 通路辨識 `?ch=line/sms/email` | 預抓取過濾 |
+| 通路辨識 `?ch=line/sms/email`（伺服器端接到 CTA 上） | 預抓取過濾 |
 | 不可猜 8 碼 token | token 期效／撤銷 |
 | 事件寫入 D1 | 字型內嵌（報告仍載 Google Fonts） |
 
@@ -46,10 +46,11 @@ npx wrangler d1 execute aircare-report --local --command "DELETE FROM cta_click"
 
 | # | 做什麼 | 應該看到 |
 |---|---|---|
-| 1 | 瀏覽器開 `http://localhost:8788/r/<token>?ch=line` | 完整的報告頁（`<token>` 見 `reports/manifest.json`） |
+| 1 | 瀏覽器開 `http://localhost:8788/` 點通路 `line`（或直接開 `/r/<token>?ch=line`） | 完整的報告頁 |
 | 2 | 捲到 **Ch.03 你的行動清單**，點橘色的「**設定倒水提醒 →**」 | 跳到綠色的「✅ 轉址成功」頁，顯示 `來源 CTA: tank` / `通路: line` |
 | 3 | 終端機 B 查事件（見下方指令） | 出現一筆 `cta_id=tank`、`ch=line`、`ua` 是你的瀏覽器 |
-| 4 | 把網址的 token 改一個字元再開 | **404** |
+| 3a | 若 `ch` 是空的 | 報告網址忘了帶 `?ch=`。通路是從**報告網址**接到按鈕上的，不是按鈕自己帶的 |
+| 4 | 把網址的 token 改一個字元再開 | **404** —— 若看到首頁，是 `public/404.html` 不見了，見設計決策 |
 | 5 | 換 `?ch=sms` 再點一次 | D1 多一筆，`ch=sms` |
 
 查事件：
@@ -85,23 +86,37 @@ npx wrangler pages dev public --port 8788 --d1 DB=aircare-report --ip 0.0.0.0
 
 ```bash
 node scripts/publish.mjs <原始報告.html> <客戶編號> <設備MAC>
-# 會產新 token、印出網址,並警告仍引用的外部資源
+# 會產新 token、印出網址、更新首頁,並警告仍引用的外部資源
+```
+
+首頁跑掉的話（例如手改過 manifest）單獨重產：
+
+```bash
+node scripts/build-index.mjs
 ```
 
 ## 檔案
 
 ```
+functions/r/[token].js         GET /r/<token>?ch=… → 送報告，並把 ch 接到報告裡的 CTA 上
 functions/c/[token]/[cta].js   GET /c/<token>/<cta> → 寫 cta_click 後 302
+public/index.html              首頁：已上架報告一覽（build-index.mjs 產出，不進版控，正式版沒有這頁）
+public/404.html                找不到頁面。**不能刪**，原因見下方設計決策
 public/demo-destination.html   原型的假目的地（正式版換成活動頁／表單／LINE）
 public/r/<token>.html          上架後的報告（publish.mjs 產出，不進版控）
 reports/manifest.json          token → 客戶編號/MAC（正式版要進 D1）
 scripts/publish.mjs            上架處理：產 token、注入追蹤連結、檢查外部資源
+scripts/build-index.mjs        產首頁；publish.mjs 會自動叫，也可單獨跑
 schema.sql                     cta_click 一張表
 ```
 
 ## 設計決策
 
 **CTA 走 302 轉址，不用前端埋點** —— 連結被複製、轉傳、在 LINE 內建瀏覽器開啟時，JS 埋點常收不到，302 一定收得到。
+
+**通路在伺服器端接上，不用前端 JS** —— 報告是靜態檔，CTA 的 href 寫死成 `/c/<token>/<cta>`，本身不知道客戶從哪個通路點進來。`functions/r/[token].js` 在送出報告時用 HTMLRewriter 把 `?ch=` 補進去。理由與 CTA 走 302 相同：LINE 內建瀏覽器／轉傳情境下 JS 不一定跑得到，通路歸因不該賭這個。`ch` 只認 `line/sms/email`，其餘忽略（會被寫進 HTML 屬性）。
+
+**`public/404.html` 是必要的，不是裝飾** —— 有了 `index.html` 之後，Pages 會拿首頁當「找不到」的 fallback 並回 200。這會讓打錯的 token 落到首頁，而首頁列著所有客戶編號。有 `404.html` 才會正確回 404。刪掉它 = 錯 token 變成客戶清單的入口。
 
 **寫事件失敗仍要轉址** —— 追蹤壞掉不該擋住客戶的行動，所以 insert 包在 try/catch 裡。代價是失敗會靜靜地發生，只在 server log 看得到。
 
@@ -115,4 +130,5 @@ schema.sql                     cta_click 一張表
 2. **token 對照在 JSON 檔**，不是 D1。
 3. **目的地寫死在函式裡** —— 正式版應由設定決定，才能不改報告就換活動頁。
 4. **沒有 rate limit** —— 正式版要防 token 掃描。
-5. `public/r/*.html` 含客戶編號（證書編號與分享卡），屬輕度個資，token 即憑證。
+5. **`/c/` 不驗 token** —— 任意 token 都會寫進 `cta_click` 並轉址（只有 `/r/` 會 404）。正式版要對照 token 表，否則掃描會灌髒資料。
+6. `public/r/*.html` 含客戶編號（證書編號與分享卡），屬輕度個資，token 即憑證。

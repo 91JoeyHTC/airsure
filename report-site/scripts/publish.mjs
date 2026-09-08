@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildIndex } from './build-index.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const [src, customerNo, mac] = process.argv.slice(2)
@@ -57,11 +58,13 @@ const mf = JSON.parse(readFileSync(mfPath, 'utf8'))
 mf.tokens[token] = { customerNo, mac, src, publishedAt: new Date().toISOString() }
 writeFileSync(mfPath, JSON.stringify(mf, null, 2) + '\n', 'utf8')
 
+buildIndex()
+
 console.log(`\n✅ 已上架`)
 console.log(`   token       ${token}`)
 console.log(`   客戶編號     ${customerNo}`)
 console.log(`   設備 MAC     ${mac}`)
-console.log(`   本機網址     http://localhost:8788/r/${token}.html`)
+console.log(`   本機網址     http://localhost:8788/r/${token}?ch=line`)
 console.log(`   已接上追蹤   ${applied.length ? applied.join(', ') : '(無)'}`)
 if (externals.length) {
   console.log(`\n⚠ 這份報告仍引用 ${externals.length} 個外部資源(規格 §5.5 要求全部內嵌):`)
