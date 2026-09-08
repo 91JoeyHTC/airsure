@@ -126,6 +126,9 @@ src/
 | `GET /api/members?q=` | 會員搜尋（姓名／電話模糊、客戶編號前綴），含 `family_bothered` | `useMemberSearch` / `useMemberByCode` / `useMembersByCodes` → Module B、Module A 場域清單 |
 | `GET /api/member360?id=` | 單一會員 profile + 消費實績 + 服務紀錄（中台已合併排序） | `useMember360` → `Member360Live` |
 
+> 📄 **想理解整條鏈路怎麼運作**（認證、一次請求的完整時序、決策點、模式切換、以及 Dispatch 需要而中台目前沒有的能力）：看 `docs/中台串接與工作流說明.md`。
+> 中台自己的權威架構文件在 `~/repos/dataspec/sf-dashboard/docs/SF串接架構.md`。
+
 **串接四條規則**（新資料域照做）：
 
 1. 一個資料域一個 hook，fetch → 型別化 → 失敗回 `null`。
