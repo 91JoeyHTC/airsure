@@ -50,21 +50,31 @@ const r1 = (v: number) => Math.round(v * 10) / 10
 
 const REAL_METRICS: Record<string, Record<TimeRange, FieldMetrics>> = Object.fromEntries(
   DEVICE_REPORTS.map((r) => {
-    const q = Math.round(r.meta.airScore)
+    const m = r.meta
     const byRange = Object.fromEntries(
       TIME_RANGES.map(({ k, days }) => {
         const win = r.daily.slice(-days)
         const mean = (f: (d: (typeof win)[number]) => number) => win.reduce((s, d) => s + f(d), 0) / win.length
+        /* 90 天就是報告自己的分析期間 —— 直接用官方期間平均(meta),與場域清單 /
+         * 場域詳情的 DEVICE_ROWS 同源,同一台設備不會在兩個 tab 出現兩個分數。
+         * 短區間沒有官方值,改用該視窗的日均值。 */
+        const pm = k === '90d' ? m.pm25Avg : r1(mean((d) => d.avg))
+        const humidity = k === '90d' ? m.humidityAvg : r1(mean((d) => d.humidity))
         return [k, {
-          pm: r1(mean((d) => d.avg)),
-          humidity: r1(mean((d) => d.humidity)),
+          pm,
+          humidity,
           temp: r1(mean((d) => d.temp)),
-          /* 報告只給 90 天的總分,短區間沒有官方計分基準 —— 不自己編一個,維持原分數。 */
-          q,
+          /* 分數一律走 v2 §4 重算,不採用 meta.airScore ——
+           * 報告的 humidityScore 三台全為 0.0(平均濕度 46.8–59.5% 依 v2 §4.2 應得 100),
+           * 總分因此整整低 50 分,會讓「分群＝金級空氣、分數＝45」自相矛盾。
+           * v2 §7 明定生效公式以 DB active 設定為準,而 active 版本就是 v2。
+           * 報告原值保留在 DEVICE_REPORTS.meta,不覆寫。
+           * (2026-09-08:本處是 v2 對齊 eea8a1a 漏掉的一個出口,補齊。) */
+          q: Math.round(aircareIndex(pm, humidity)),
         }]
       }),
     ) as Record<TimeRange, FieldMetrics>
-    return [deviceFieldId(r.meta.mac), byRange]
+    return [deviceFieldId(m.mac), byRange]
   }),
 )
 
