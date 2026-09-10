@@ -6,3 +6,5 @@ public/r/*.html
 reports/manifest.json
 # 首頁列出已上架報告,含客戶編號
 public/index.html
+# 字型是報告內容的 subset(只含該份報告出現過的字),同樣不進版控
+public/f/

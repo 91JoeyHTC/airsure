@@ -1,0 +1,5 @@
+# 字型檔名是內容雜湊,內容變了檔名就變 —— 可以永久快取。
+# 客戶多半會回頭再開同一份報告,第二次不該再等 220KB。
+/f/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *

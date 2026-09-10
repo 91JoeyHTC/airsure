@@ -8,9 +8,10 @@
 | 有 | 沒有 |
 |---|---|
 | 一顆 CTA（設定倒水提醒）的點擊追蹤 | 其餘兩顆 CTA、四顆分享按鈕 |
-| 302 轉址（不依賴 JS） | 字型內嵌（報告仍載 Google Fonts） |
+| 302 轉址（不依賴 JS） | 其餘外部資源（目前已無，見設計決策） |
 | 通路辨識 `?ch=line/sms/email`（伺服器端接到 CTA 上） | 預抓取的**過濾規則**（原始資料留著，規則未定） |
 | 報告開啟事件（伺服器端 + beacon 兩筆） | 開啟事件去重 |
+| 字型放本站（零第三方請求） | 字型檔的舊版清理 |
 | 不可猜 8 碼 token | token 期效／撤銷、rate limit |
 | 事件寫入 D1 | |
 
@@ -92,7 +93,9 @@ npx wrangler pages dev public --port 8788 --d1 DB=aircare-report --ip 0.0.0.0
 然後手機連同一個 Wi-Fi，開 `http://<你電腦的區網IP>:8788/r/<token>?ch=line`
 （查 IP：`ipconfig getifaddr en0`）
 
-手機上要特別看：版面有沒有跑掉、**字型載入前後版面會不會跳**（報告還在載 Google Fonts）、按鈕好不好按。
+手機上要特別看：版面有沒有跑掉、**字型換上來的時候版面會不會跳**（`font-display: swap`，先系統字後換中文字型）、按鈕好不好按。
+
+報告本身 25KB（gzip）就畫得出來，中文字型另外 220/283KB 在背景載。這正是走「同網域字型檔」而不是內嵌的原因 —— 內嵌要整包 551KB 下載完才會出現第一個字。
 
 ### 驗收清單
 
@@ -108,7 +111,8 @@ npx wrangler pages dev public --port 8788 --d1 DB=aircare-report --ip 0.0.0.0
 
 ```bash
 node scripts/publish.mjs <原始報告.html> <客戶編號> <設備MAC>
-# 會產新 token、印出網址、更新首頁,並警告仍引用的外部資源
+# 會產新 token、subset 字型寫進 public/f/、印出網址、更新首頁
+# 需要連得到 Google（取字型 subset）；連不到就不上架，不會悄悄產出還連著 Google Fonts 的報告
 ```
 
 首頁跑掉的話（例如手改過 manifest）單獨重產：
@@ -127,8 +131,11 @@ public/index.html              首頁：已上架報告一覽（build-index.mjs 
 public/404.html                找不到頁面。**不能刪**，原因見下方設計決策
 public/demo-destination.html   原型的假目的地（正式版換成活動頁／表單／LINE）
 public/r/<token>.html          上架後的報告（publish.mjs 產出，不進版控）
+public/f/<hash>.woff2          字型 subset（publish.mjs 產出，不進版控；檔名是內容雜湊，跨報告共用）
+public/_headers                /f/* 永久快取
 reports/manifest.json          token → 客戶編號/MAC（正式版要進 D1）
-scripts/publish.mjs            上架處理：產 token、注入追蹤連結、檢查外部資源
+scripts/publish.mjs            上架處理：產 token、注入追蹤連結、處理字型、檢查外部資源
+scripts/localize-fonts.mjs     把 Google Fonts 換成本站 /f/ 的 subset woff2
 scripts/build-index.mjs        產首頁；publish.mjs 會自動叫，也可單獨跑
 schema.sql                     cta_click / report_open 兩張表
 ```
@@ -147,11 +154,17 @@ schema.sql                     cta_click / report_open 兩張表
 
 **不認識的 `cta_id` 回 404，不轉址** —— 否則這支端點就成了開放跳板，任何人都能拿它導去任意網址。
 
+**字型放本站 `/f/`，不是 base64 內嵌進 HTML** —— 計畫 §5.5 第 1 條要求「全部 inline」，但那條要擋的風險是「第三方 CDN 失效整份報告就毀了」。字型跟報告同一個部署，那個風險一樣完全消除：要掛就一起掛。
+
+真的內嵌的話 HTML 會從 105KB 變 804KB（gzip 24KB → 551KB），而且**要整份下載完才畫得出第一個字** —— 客戶是從簡訊／LINE 用手機開，那是好幾秒白畫面，違反 §3.2 N2「手機優先、低延遲」。走同網域檔案，首屏維持 25KB，字型用 `swap` 補上。
+
+subset 只取該份報告真的出現過的字元（這份 735 個），並用可變字型（單檔涵蓋 400–900 字重，220KB 取代四個固定字重的 450KB）。檔名是內容雜湊，所以同樣的 subset 跨報告共用一份，也能永久快取（`public/_headers`）。
+
 **只存國別不存 IP**（`cf-ipcountry`），保留原始 UA 供事後過濾預抓取。
 
 ## 已知問題（正式版要處理）
 
-1. **報告仍載 Google Fonts**（三套、含兩套中文字型）—— 違反計畫 §5.5 第 1 條。`publish.mjs` 會警告但放行。
+1. **字型檔沒有清理機制** —— `public/f/` 只增不減。報告改版後舊 subset 會留著（檔名是內容雜湊，不會衝突，只是佔空間）。
 2. **token 對照在 JSON 檔**，不是 D1。
 3. **目的地寫死在函式裡** —— 正式版應由設定決定，才能不改報告就換活動頁。
 4. **沒有 rate limit** —— 正式版要防 token 掃描。

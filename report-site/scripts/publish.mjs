@@ -1,16 +1,18 @@
 /* 上架處理(原型)—— 把一份原始報告 HTML 變成可追蹤的線上報告。
  *
- * 這一版刻意只做一件事:把「設定倒水提醒」那顆按鈕接上追蹤轉址。
- * 字型內嵌、開啟埋點、其餘 CTA、分享按鈕都還沒做(見 README)。
+ * 目前做到:接上「設定倒水提醒」的追蹤轉址、開啟埋點、字型落地到本站。
+ * 其餘 CTA 與分享按鈕還沒做(見 README)。
  *
  * 用法:
  *   node scripts/publish.mjs <原始報告.html> <客戶編號> <設備MAC>
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { Buffer } from 'node:buffer'
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildIndex } from './build-index.mjs'
+import { localizeFonts } from './localize-fonts.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const [src, customerNo, mac] = process.argv.slice(2)
@@ -43,6 +45,17 @@ for (const { id, label } of CTA_PATCHES) {
   else console.warn(`⚠ 找不到按鈕「${label}」,未注入`)
 }
 
+/* 字型搬到本站(§5.5 第 1 條)。要連 Google 取 subset,失敗就不該悄悄放行。 */
+let fontInfo
+try {
+  fontInfo = await localizeFonts(out, { publicDir: join(ROOT, 'public') })
+  out = fontInfo.html
+} catch (e) {
+  console.error(`\n✘ 字型處理失敗:${e.message}`)
+  console.error(`   報告會留著 Google Fonts 連結,違反規格 §5.5 第 1 條,不予上架。`)
+  process.exit(1)
+}
+
 /* 上架前檢查 —— 不過就不給上架(規格 §5.5) */
 const externals = [...out.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)]
   .map((m) => m[1])
@@ -66,6 +79,11 @@ console.log(`   客戶編號     ${customerNo}`)
 console.log(`   設備 MAC     ${mac}`)
 console.log(`   本機網址     http://localhost:8788/r/${token}?ch=line`)
 console.log(`   已接上追蹤   ${applied.length ? applied.join(', ') : '(無)'}`)
+console.log(`   HTML 大小    ${(Buffer.byteLength(out) / 1024).toFixed(0)} KB(字型不算在內,首屏只等這個)`)
+console.log(`   字型         ${fontInfo.chars} 個字元 subset,放在 /f/ 同網域`)
+for (const r of fontInfo.report) {
+  console.log(`     · ${r.family.padEnd(16)} ${(r.bytes / 1024).toFixed(0).padStart(4)} KB  ${r.files.join(' ')}`)
+}
 if (externals.length) {
   console.log(`\n⚠ 這份報告仍引用 ${externals.length} 個外部資源(規格 §5.5 要求全部內嵌):`)
   for (const u of [...new Set(externals)]) console.log(`   · ${u}`)
